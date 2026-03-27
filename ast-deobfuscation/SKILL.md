@@ -1,233 +1,115 @@
 ---
 name: ast-deobfuscation
-description: Use Babel AST to deobfuscate JavaScript by restoring string arrays, decryptor chains, dispatcher objects, control-flow flattening, proxy wrappers, constant expressions, and readable naming. Trigger when code contains `_0x`-style names, string tables, `while/switch` or `for/switch` flattening, self-invoking decode wrappers, dispatcher objects, JSFuck-like expressions, or layered browser anti-bot logic that needs AST-guided recovery rather than simple beautification. Do not use when the code is only minified or the task is only formatting.
+description: 使用 Babel AST 对 JavaScript 做定向反混淆，恢复字符串表、解密链、分发器对象、虚假常量分支、基于相等判断的 opcode 分发链、控制流平坦化结构、代理包装、常量表达式和更可读的命名。当代码出现 `_0x` 风格标识符、字符串表、自执行解码包装、`while/switch` 或 `for/switch` 平坦化、层层嵌套的 `if (常量 === opcode)` 分发链，或用字面量比较制造噪声分支时使用。
 ---
 
-# ast-deobfuscate
+# AST 反混淆
 
-面向 Babel AST 的 JavaScript 解混淆技能。目标不是“尽量美化”，而是尽量恢复可读、可分析、可继续逆向的代码结构。
+优先使用技能内附带的 Babel 脚本做“小而准”的 AST 变换。尽量避免一次性做全局大改写，优先采用多轮、可解释、可回退的定向处理。
 
-## Default Strategy
+## 推荐顺序
 
-默认优先级：
+1. 先读前 200 到 400 行，判断样本属于哪一类混淆。
+2. 先恢复字符串表、解码器入口或最小运行时前置逻辑。
+3. 在更深层结构变换前，先清理虚假的恒真或恒假分支。
+4. 做结构标准化，让后续 AST 规则作用在更干净的代码上。
+5. 内联分发器对象和简单字面量别名。
+6. 展开数组驱动或 `split('|')` 驱动的控制流平坦化。
+7. 当长串 `if / else if` 都在判断同一个 opcode 变量时，把它们还原成 `switch`。
+8. 只有当用户明确提到“需要重命名变量名”或“需要提高命名可读性”时，才执行 `_0x` 风格命名和单字母标识符重命名。
+9. 每完成一个关键阶段就重新 parse 一次并验证语法。
 
-1. 先做单轮、定向、可解释的 AST 变换。
-2. 只有在定向规则无法继续推进时，才使用多轮迭代遍历。
-3. 只有在静态无法确认且样本明显依赖运行期解密环境时，才局部 `eval` 最小引导代码。
+## 内置脚本
 
-不要一上来就做“全量多轮 replace + evaluate”。大样本里这类策略容易变慢、误替换，甚至在字面量回写阶段进入近似死循环。
+- `scripts/normalize-structure.js`
+  用于处理 `SequenceExpression`、表达式语句里的三元表达式、简单逻辑表达式语句清理、零参数 IIFE 展开，以及 `if`、`for` 中的逗号表达式优化。
+  当前优先支持：
+  - `if (a(), b(), test)` 这类测试表达式拆分
+  - `for (a(), b(), c(); test; update)` 这类初始化表达式拆分
+  - `for (init; a(), b(), test; update)` 这类测试表达式拆分
+  - 在循环体内不存在 `continue` 风险时，把 `for` 的更新逗号表达式追加到循环体尾部
 
-## Core Principle
+- `scripts/inline-literals.js`
+  用于安全的原始值传播、数组下标字面量恢复。
+  面对大型虚拟机解释器时，如果这一轮明显变慢或开始不稳定，可以延后执行。
 
-优先围绕“混淆器产物模式”写规则，而不是围绕“语法节点种类”盲扫。
+- `scripts/inline-dispatchers.js`
+  当对象字面量里保存了二元、逻辑或调用包装器，并且源码大量出现 `obj[key](...)` 这类调用时使用。
 
-更稳的方式是：
+- `scripts/flatten-array-control-flow.js`
+  用于展开 `for/switch`、`while/switch`，以及由数组或 `"3|1|2".split('|')` 驱动的控制流平坦化。
 
-- 先定位混淆入口：顶层 IIFE、前置解密器、控制流分发器、局部包装函数。
-- 再只对目标模式做替换：字符串表恢复、别名链还原、`for/switch` 或 `while/switch` 展平、逗号表达式拆分、包装 IIFE 去除。
-- 每完成一组关键替换后，再做一次 `generator -> parser` 重解析，让后续规则在更干净的 AST 上继续工作。
+- `scripts/prune-fake-branches.js`
+  当样本中出现 `if ('a' === 'a')`、`if ('x' !== 'y')` 或其他可被静态确定为布尔值的测试时使用。
+  这一轮的目标是保留真实分支、移除噪声分支。
 
-## Fast Triage
+- `scripts/if-chain-to-switch.js`
+  当样本中出现长串 `if (0x31 === opcode) ... else { if (0x48 === opcode) ... }` 这类结构时使用。
+  仅在以下条件同时满足时转换：
+  - 整条链都在判断同一个判别表达式
+  - 每个分支都拿这个表达式与字面量比较
+  - 分支数量至少有 3 个
 
-先快速判断样本属于哪一类，再决定脚本结构。
+- `scripts/rename-identifiers.js`
+  仅在用户明确要求“重命名变量”或“提升变量名可读性”时使用。
+  默认不要执行这一轮，避免在尚未确认语义前引入额外命名噪声。
 
-### Pattern A: 顶层 IIFE 携带数组参数
+## 模式指南
 
-常见特征：
+### 字符串表与解码包装
 
-- 顶层是 `!function(...){}(...)` 或 `void function(...){}(...)` 一类包装。
-- 实参里直接传入多个数组或对象。
-- 包装体内部大量 `arr[123]`、`fn(12)`、`String.fromCharCode(...)`、`split('').reverse().join('')`。
-- 控制流部分常见 `for(...; ![];) { switch(...) { ... } }`。
+- 先定位数组字面量、解码函数和别名链。
+- 优先恢复“数字参数直接解码”的调用点，再处理更大的控制流。
+- 如果必须运行时求值，只执行最小解码前置代码，不要直接执行整份源文件。
 
-推荐处理顺序：
+### 虚假分支清理
 
-1. 从顶层调用提取 `formalParam -> actualArg` 映射。
-2. 只替换明确命中的数组下标访问，不要全局乱替换。
-3. 处理包装函数中直接可展开的语句块。
-4. 展平 `for/switch` 或 `while/switch` 控制流。
-5. 重解析一次。
-6. 再做字符串别名传播、`String.fromCharCode` 求值、数组 `join('')` 还原、反转拼接还原。
+- 只有在测试条件能被静态且可靠地确定为布尔值时，才删除分支。
+- 优先处理字面量字符串或字面量数字比较。
+- 清理后尽快重新 parse，因为死分支里经常故意塞入干扰语法或垃圾逻辑。
 
-### Pattern B: 前几条语句就是解密引导代码
+### Opcode `if` 链
 
-常见特征：
+- 把长串相等判断链还原成 `switch`，这样 opcode 分发会更容易读。
+- `else { if (...) { ... } }` 也视为同一条链的一部分。
+- 如果分支最后已经是 `return`、`throw`、`continue` 或显式 `break`，不要额外再加无意义语句。
 
-- 文件开头几条语句就初始化字符串解密器或控制变量。
-- 中间出现多个别名，例如 `var a = decrypt; var b = a;`。
-- 后面大量 `a(12)`、`b(34)` 一类调用。
-- 还会混入 `SequenceExpression`、`for/switch` 控制流。
+### 逗号表达式优化
 
-推荐处理顺序：
+- 优先还原 `if.test` 中的逗号表达式，把前置副作用语句提到 `if` 之前。
+- 优先还原 `for.init` 中的逗号表达式，因为它们只执行一次，安全性最高。
+- 对 `for.test` 中的逗号表达式，可以改写为“循环体开头先执行前置表达式，再在顶部 `break` 判断”的形式。
+- 对 `for.update` 中的逗号表达式，只在确认循环体里没有 `continue` 风险时再做拆分。
 
-1. 只截取前几条引导语句，拼出最小可运行解密环境。
-2. `eval` 这几条最小代码，不要直接执行整个源文件。
-3. 根据 binding 追踪别名链，把只带数字字面量参数的调用替换成字符串字面量。
-4. 删除已经消费掉的引导语句。
-5. 展平单一控制变量驱动的 `for/switch`。
-6. 拆分 `SequenceExpression`。
+### 虚拟机解释器
 
-### Pattern C: 顶层 IIFE 展开后，局部函数里还有二次字符串恢复
+- 第一轮通常只能恢复辅助函数、栈变量和 opcode 读取器。
+- 做完虚假分支清理和 `if -> switch` 转换后，再进行第二轮简化。
+- 如果已经能清晰看懂主分发器、字节码读取辅助函数和主要 case 逻辑，就可以视为阶段性成功。
 
-常见特征：
+## 何时重新解析
 
-- 顶层 body 先被包装在一个自执行函数里。
-- 解密函数在前两条或前几条声明里。
-- 去掉第一层后，函数体内部还有 `new Xxx()['prop']`、成员访问数组、局部索引访问恢复。
-- 样本里会混入 `!function(){}()` 或 `!(()=>{})()` 一类无参包装。
+遇到以下情况后，建议立刻重新 parse：
 
-推荐处理顺序：
+- 展开顶层 IIFE 后
+- 清理虚假分支后
+- 拍平一层 `switch` 控制流后
+- 把 opcode 的 `if` 链改成 `switch` 后
+- 还原 `if` 或 `for` 中的逗号表达式后
+- 批量 `replaceWithMultiple` 后
 
-1. 先把顶层 IIFE 的 body 提出来替换 `program.body`。
-2. 执行最小解密引导，只恢复明确的数字下标调用。
-3. 删除已消费的引导声明。
-4. 拆分逗号表达式。
-5. 去掉无参自执行包装。
-6. 重解析一次。
-7. 再识别函数内部那组“构造器 + 成员表达式 + 数字下标”的字符串恢复模式。
+## 校验
 
-## Practical Transform Rules
-
-### 1. 只对“确定可还原”的节点做替换
-
-适合直接替换的场景：
-
-- 数组字面量下标访问，且下标是 `NumericLiteral`。
-- 调用参数全是数字或纯字面量，且你已经建立了最小解密环境。
-- `['a','b','c'].join('')`、`String.fromCharCode(...)`、`split('').reverse().join('')` 这种纯计算表达式。
-- 明确的字符串别名链：`var a = 'x'; var b = a;`。
-
-不确定就不要替换。宁可少做一步，也不要把控制流或环境依赖表达式错误内联。
-
-### 2. 控制流展平优先写“定向 visitor”
-
-处理 `for/switch`、`while/switch` 时，不要写成通用大而全解法，优先针对当前样本结构：
-
-- 先验证 `init/test/update/body` 形状是否固定。
-- 提取 `switchCaseMap`。
-- 按控制数组或控制变量顺序拼接 block。
-- 丢掉 `continue`、仅用于跳转的赋值、无意义 `break`。
-
-只要结构不匹配，就直接跳过，不要强行展平。
-
-### 3. `SequenceExpression` 要按父节点分类拆分
-
-至少区分：
-
-- `ExpressionStatement`
-- `ReturnStatement`
-- `VariableDeclarator`
-
-不同父节点下，拆法不同。不要把所有逗号表达式都简单改成多条表达式语句。
-
-### 4. 去包装 IIFE 时，优先处理“零参、立即执行、纯包裹”模式
-
-例如：
-
-```js
-!function(){ ... }();
-```
-
-如果满足：
-
-- 外层是 `UnaryExpression('!')` 或等价包装。
-- `argument` 是 `CallExpression`。
-- `callee` 是 `FunctionExpression`。
-- 无参数、无实参。
-
-这类一般可以直接取函数体展开。
-
-### 5. 局部 `eval` 只运行最小必需代码
-
-允许 `eval` 的典型场景：
-
-- 前 2 到 5 条语句就能构造出字符串解密函数。
-- 一个函数声明内部只做纯字符串恢复。
-- 明确的 `String.fromCharCode` 或拼接恢复函数。
-
-禁止：
-
-- 直接 `eval` 整个源文件。
-- 在不隔离环境的情况下执行带浏览器依赖的大段代码。
-- 对含有明显副作用的逻辑做批量运行。
-
-## Sentinel Cleanup
-
-某些样本会在条件测试位里塞“哨兵对象比较”来污染逻辑，例如：
-
-```js
-cond && fn(...) !== {}
-cond && fn(...) === {}
-```
-
-这类模式经常出现在：
-
-- `if (...)`
-- `for (...; test; ...)`
-- `while (test)`
-
-如果已经确认右侧只是混淆器注入的测试位噪音，而不是业务必须副作用，可以做窄化清理：
-
-- 只处理测试表达式位置。
-- 只处理 `&&` 右侧是“调用结果与空对象字面量比较”的情况。
-- 直接保留左侧条件，删除右侧哨兵比较。
-
-这是一个定向规则，不要默认推广到所有逻辑表达式。
-
-## Reparse Points
-
-以下节点处理完后，建议立即重解析一次：
-
-- 顶层 IIFE 展开后。
-- 大块控制流展平后。
-- 一轮字符串恢复后。
-- 大量 `replaceWithMultiple` 之后。
-
-推荐方式：
-
-```js
-ast = parser.parse(
-  generator(ast, { compact: false, comments: false, jsescOption: { minimal: true } }).code,
-  { sourceType: 'unambiguous' }
-);
-```
-
-## Avoid These Mistakes
-
-- 不要把 `StringLiteral`、`NumericLiteral`、`BooleanLiteral` 自己也纳入“继续 evaluate 并回写”的循环，否则很容易重复替换同值节点，导致低效甚至近似死循环。
-- 不要对所有 `CallExpression` 都尝试 `eval`。
-- 不要在不验证 binding 的情况下做别名传播。
-- 不要假设所有 `LogicalExpression` 都能安全折叠，尤其是可能含副作用调用时。
-- 不要为了“完全还原”而牺牲稳定性。先拿到结构可读、核心字符串已恢复、主要控制流已展开的结果。
-
-## Preferred Output Standard
-
-一个合格的解混淆结果至少应满足：
-
-- 主要字符串表已经恢复。
-- 主要控制流展平已经完成。
-- 包装 IIFE 和明显别名链已去掉。
-- 代码可以再次被 Babel 正常解析。
-- 输出中 `_0x` 风格残留显著减少，且剩余部分集中在暂时无法静态确认的区域。
-
-## Working Style
-
-执行时按这个顺序组织工作：
-
-1. 先读样本前 100 到 300 行，确认入口结构。
-2. 写单个定向脚本，不要先拆成很多轮。
-3. 只在关键阶段重解析。
-4. 跑脚本并验证输出可解析。
-5. 再与期望结果做 AST 级别比较，而不是只看文本是否一模一样。
-6. 如果 AST 已一致但文本不同，优先判断是否只是字面量 raw、引号风格、Unicode 转义差异。
-
-## Validation
-
-优先做这几类验证：
-
-- `node --check` 确认脚本本身无语法错误。
-- 运行脚本生成 `target_deobf.js`。
-- 用 Babel 重新 parse 产物，确认无语法损坏。
-- 用“去掉 loc/start/end/extra 后的 AST JSON”比对产物与期望文件，而不是只做文本 diff。
-
-如果文本不同但 AST 一致，视为成功。
+- 对每个新增或修改过的脚本，至少用一个代表性样本实际跑一次。
+- 条件允许时，使用 `node --check` 检查生成产物的语法。
+- 再用 Babel 重新 parse 产物，确认 AST 没有损坏。
+- 优先保证 AST 合法和结构可读，而不是追求与原文本完全一致。
+
+## 约束
+
+- 不要对任意 `CallExpression` 做批量运行时求值。
+- 没确认 binding 稳定前，不要传播别名。
+- 没有明确顺序源时，不要强行展开控制流。
+- 没有用户明确请求时，不要默认执行变量重命名。
+- 对大型解释器，如果 `inline-literals` 开始明显拖慢或引入不稳定，就停在上一阶段。
+- 当主分发器、辅助函数和关键字符串已经足够可读时，就可以停下来进入下一步逆向分析。
