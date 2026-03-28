@@ -1,0 +1,6 @@
+interface:
+  display_name: "AST Deobfuscation"
+  short_description: "Layered Babel AST deobfuscation with detectors, reusable passes, and site-specific adapters."
+  default_prompt: "Use $ast-deobfuscation to detect the obfuscation family first, then run the layered pipeline with generic passes and any matching site adapter."
+policy:
+  allow_implicit_invocation: true
