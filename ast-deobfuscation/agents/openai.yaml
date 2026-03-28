@@ -1,4 +1,0 @@
-interface:
-  display_name: "AST Deobfuscation"
-  short_description: "Recover readable JavaScript from obfuscated sources with targeted Babel AST transforms."
-  default_prompt: "Use $ast-deobfuscation when JavaScript needs AST-guided recovery instead of simple formatting. Triage the obfuscation pattern first, keep intermediate outputs, apply narrow transforms, and validate behavior after each major pass."
