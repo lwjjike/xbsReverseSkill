@@ -50,6 +50,16 @@ function createNativeConstructor(name, length, impl, addon) {
   return markNativeFunction(Ctor, name);
 }
 
+function throwIllegalConstructor(name, addon) {
+  if (protect && protect.throwIllegalConstructor) return protect.throwIllegalConstructor(name, addon);
+  throw new TypeError(`Failed to construct '${name}': Illegal constructor`);
+}
+
+function throwConstructorRequiresNew(name, addon) {
+  if (protect && protect.throwConstructorRequiresNew) return protect.throwConstructorRequiresNew(name, addon);
+  throw new TypeError(`Failed to construct '${name}': Please use the 'new' operator, this DOM object constructor cannot be called as a function.`);
+}
+
 function installDocumentAll(document, addon) {
   let value;
   let exact = false;
@@ -86,31 +96,25 @@ function installDocumentEnv(globalObject, fixture = {}, options = {}) {
   }
 
   const EventTarget = createNativeConstructor('EventTarget', 0, function EventTarget(isNew) {
-    if (!isNew) throw new TypeError("Failed to construct 'EventTarget': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    if (!isNew) return throwConstructorRequiresNew('EventTarget', addon);
   }, addon);
   const Node = createNativeConstructor('Node', 0, function Node(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Node': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Node', addon);
   }, addon);
   const Document = createNativeConstructor('Document', 0, function Document(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Document': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Document', addon);
   }, addon);
   const HTMLDocument = createNativeConstructor('HTMLDocument', 0, function HTMLDocument(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'HTMLDocument': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('HTMLDocument', addon);
   }, addon);
   const Element = createNativeConstructor('Element', 0, function Element(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Element': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Element', addon);
   }, addon);
   const HTMLElement = createNativeConstructor('HTMLElement', 0, function HTMLElement(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'HTMLElement': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('HTMLElement', addon);
   }, addon);
   const HTMLHtmlElement = createNativeConstructor('HTMLHtmlElement', 0, function HTMLHtmlElement(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'HTMLHtmlElement': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('HTMLHtmlElement', addon);
   }, addon);
 
   for (const ctor of [EventTarget, Node, Document, HTMLDocument, Element, HTMLElement, HTMLHtmlElement]) {

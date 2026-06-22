@@ -1519,3 +1519,125 @@ node scripts/run_with_trace.js --target case/js/original/leak.js --entry window.
 - `navigator`、`location`、`Storage`、`document.cookie`、`Date` / `performance` 等章节不得写成“检测到再补原型链 / toString / descriptor”的主流程。
 - addon 可用时 getter / setter / 方法 / 构造函数 / `document.all` / 原型链必须优先使用 addon API；addon 不可用时才使用 `NativeProtect` / JS fallback，并记录降级原因。
 - 原型链不是最终补的附加项，而是每个对象进入补环境范围时的第一步。
+
+## 测试 92：WebAPI addon 覆盖检查
+
+输入场景：最终补环境代码包含以下片段：
+
+```javascript
+ctx.Blob = function Blob(parts, options) {};
+ctx.screen = { width: 1920, height: 1080 };
+ctx.indexedDB = { open() { return {}; } };
+ctx.URL.createObjectURL = function createObjectURL() {};
+function WGLStub() {}
+WGLStub.prototype = { getParameter() { return null; } };
+ctx.TextEncoder = globalThis.TextEncoder;
+```
+
+执行：
+
+```bash
+node scripts/check_webapi_addon_coverage.js --file case/result/src/env/install-env.js --markdown
+```
+
+期望：
+
+- 检查失败，退出码为 `1`。
+- 报告指出 `Blob` 普通构造函数、`screen` 普通对象、`indexedDB.open` 普通对象字面量方法、`URL.createObjectURL` 普通函数、`prototype = {}` 和 `TextEncoder` 宿主透传。
+- 修复建议要求使用 `createProtoChains`、`createNativeFunction`、`createGetter`、`createSetter` 或 addon-first helper。
+- 该检查失败时不得进入最终交付；只有用户明确豁免并记录原因时才允许继续。
+
+## 测试 93：真实 case 问题模式应被拦截
+
+输入场景：真实项目生成的 `case/result/src/env/install-env.js` 中存在以下问题模式：
+
+- `ctx.Blob = function(...) { ... }`
+- `ctx.FormData = function(...) { ... }`
+- `ctx.screen = { ... }`
+- `ctx.indexedDB = { open(){ ... } }`
+- `ctx.IDBKeyRange = { ... }`
+- `ctx.CSS = { supports(){ ... } }`
+- `ctx.URL.createObjectURL = function(...) { ... }`
+- `CanvasRenderingContext2D.prototype = { ... }`
+- `ctx.TextEncoder = globalThis.TextEncoder`
+- `ctx.URL = globalThis.URL`
+- `ctx.WebAssembly = globalThis.WebAssembly`
+
+执行：
+
+```bash
+node scripts/check_webapi_addon_coverage.js --file case/result/src/env/install-env.js --markdown
+```
+
+期望：
+
+- 检查失败并列出对应行号、问题类型和修复建议。
+- 不应再只依赖 `check_env_realism.js` 的粗粒度检查；交付门禁必须同时运行 `check_code_quality.js`、`check_webapi_addon_coverage.js`、`check_env_realism.js` 和 `check_final_artifact.js`。
+- 修复后的代码应按模块拆分，`install-env.js` 只做装配；各 WebAPI 模块内部从第一版实现开始使用 addon-first、descriptor、原型链、构造函数行为和中文注释。
+
+## 测试 94：构造函数错误类型和信息必须来自浏览器采样
+
+输入场景：补环境代码中存在：
+
+```javascript
+const Node = native.createNativeConstructor('Node', 0, function Node(isNew) {
+  throw new TypeError('Illegal constructor');
+});
+```
+
+执行：
+
+```bash
+node scripts/check_webapi_addon_coverage.js --file case/result/src/env/browser-objects/node.js --markdown
+```
+
+期望：
+
+- 检查失败。
+- 报告指出泛化 `Illegal constructor` 未证明与浏览器一致。
+- 修复要求先采样目标浏览器中 `Node()` 与 `new Node()` 的错误类型、错误构造器、message、`String(error)` 和 stack 首行。
+- 修复后应使用 `addon.throwTypeError`、`throwBrowserTypeError`、`throwIllegalConstructor` 或按样本实现对应错误类型；如果不是 `TypeError`，不能强行写成 `TypeError`。
+
+## 测试 95：addon 实例不得用 markObjectType 二次伪装
+
+输入场景：补环境代码中存在：
+
+```javascript
+const chains = native.createProtoChains([{ name: 'Blob', instanceFactoryName: 'createBlob' }], addon);
+const blob = chains.createBlob();
+native.markObjectType(blob, 'Blob');
+```
+
+执行：
+
+```bash
+node scripts/check_webapi_addon_coverage.js --file case/result/src/env/browser-objects/blob.js --markdown
+```
+
+期望：
+
+- 检查失败并指出 `markObjectType` 不是批准 API，语义不明确。
+- 修复方向是删除二次标记；addon 构造函数 / `createProtoChains` 实例工厂创建出的对象本身应处理 `Object.prototype.toString`。
+- 只有 addon 不可用、创建的是普通 JS fallback 对象时，才允许 `markObjectToString` / `Symbol.toStringTag`，且必须在附近注释、阶段报告和最终总结中记录 fallback 原因。
+
+## 测试 96：单行堆叠代码必须被格式化检查拦截
+
+输入场景：补环境代码中存在：
+
+```javascript
+Object.defineProperty(Navigator.prototype, 'userAgent', { get: native.createGetter('userAgent', 0, function(){ return ua; }), enumerable: true, configurable: true });
+ctx.indexedDB = { open(){ return {}; }, deleteDatabase(){ return {}; } };
+try { Object.defineProperty(obj, 'x', { value: 1, enumerable: true, configurable: true }); } catch {}
+```
+
+执行：
+
+```bash
+node scripts/check_code_quality.js --file case/result/src/env/install-env.js --markdown
+```
+
+期望：
+
+- 检查失败。
+- 报告指出属性描述符压在一行、全局 WebAPI 对象 / 方法堆叠、较长单行控制流等问题。
+- 修复后应拆成多行具名函数、清晰 descriptor、模块化安装函数，并补充中文注释说明来源和 fallback 原因。

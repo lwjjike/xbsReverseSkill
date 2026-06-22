@@ -54,7 +54,7 @@ obj.constructor.name
 3. **访问器**：真实浏览器中是 getter / setter 的属性，必须补成 accessor descriptor；不要为了省事改成 data descriptor。
 4. **函数 toString 保护**：普通方法、构造函数、原型方法在 addon 可用时必须先用 `createNativeFunction`；addon 不可用或调用失败时才用 `NativeProtect.setNativeFunc` fallback。
 5. **访问器 toString 保护**：getter / setter 本身也是函数；addon 可用时必须先用 `createGetter` / `createSetter`，失败时才用 `NativeProtect.setNativeFunc(getter, "get xxx")` / `setNativeFunc(setter, "set xxx")` fallback。
-6. **实例对象 toString 保护**：对 `navigator`、`document`、`localStorage`、`screen`、`location` 等实例，优先用 addon 创建真实对象 / 原型链；addon 不足时再用 `Symbol.toStringTag`、`NativeProtect.setObjFunc(obj, "Navigator")`。
+6. **实例对象 toString 保护**：对 `navigator`、`document`、`localStorage`、`screen`、`location` 等实例，优先用 addon 构造函数 / `createProtoChains` 实例工厂创建真实对象和原型链；addon 创建出的实例通常已经具备正确的 `Object.prototype.toString` 行为，不要再叠加 `markObjectType`、`markObjectToString` 或手写 `Symbol.toStringTag` 伪装。只有 addon 不可用、必须创建普通 JS fallback 对象时，才使用 `Symbol.toStringTag`、`NativeProtect.setObjFunc(obj, "Navigator")` / `markObjectToString`，并记录 fallback 原因。
 7. **特殊对象**：`document.all` 这类 HTMLDDA / 不可检测对象必须优先使用 addon `createUndetectable`；JS fallback 只能标记为近似，不得声称完全一致。
 8. **指纹终端 API**：Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API 必须优先回放真实浏览器采样值，同时保持 API 所在对象的原型链、描述符和 native-like `toString`；不得因为 Node.js 无法真实渲染就把最终流程改成自动化。
 
@@ -98,6 +98,53 @@ node scripts/load_native_addon.js --json
 2. 创建函数、构造函数、getter、setter、`document.all`、`createNativeObject` / `createProtoChains` 支持的对象时，先调用 addon API。
 3. 只有用户明确要求不使用 addon、addon 不可用、ABI 不兼容或 API 抛错时，才降级到 `NativeProtect` / JS fallback，并在 `notes`、阶段输出和最终总结中记录豁免或降级原因。
 4. 交付前运行 `check_env_realism.js --case-dir case --markdown`；该脚本默认强制 addon-first。如果源码只出现 `NativeProtect` / `markNativeFunction`，却没有 addon API、`options.addon` 或加载记录，应视为失败。只有用户明确要求不使用 addon 时，才可传入 `--no-require-addon-first` 并记录原因。
+
+## 构造函数报错必须与浏览器一致
+
+构造函数行为不只包括“能不能 `new`”，还包括错误类型、错误对象构造器、错误信息和调用路径。不要把所有不可构造对象都简单写成：
+
+```js
+throw new TypeError('Illegal constructor');
+```
+
+要求：
+
+1. 对进入补环境范围的每个构造函数，先用已确认取证浏览器采样：
+   - `Ctor()` 直接调用的 `error.name`、`error.constructor.name`、`error.message`、`String(error)`、stack 首行。
+   - `new Ctor()` 构造调用的同样字段。
+   - 可构造对象的返回实例、`instanceof`、`Object.prototype.toString.call(instance)`。
+2. 把采样结果写入 `case/fixtures/constructor-errors.fixture.json`、`case/notes/构造函数行为采样.md` 或阶段报告，不要只凭记忆猜测。
+3. 多数 DOM 构造错误是 `TypeError`，但仍以目标浏览器采样为准；如果采样为 `DOMException` 或其他错误类型，必须按样本复现。
+4. addon 可用时优先使用 `addon.throwTypeError(message)` 或 addon 提供的等价错误抛出能力；addon 不支持目标错误类型时，才用 JS fallback，并记录差异。
+5. 错误信息要精确到浏览器版本和调用方式。例如 Chrome 中“需要 new 调用”和“非法构造”通常不是同一条 message。
+
+推荐采样模板：
+
+```js
+function collectConstructorError(name) {
+  const Ctor = globalThis[name];
+  const result = { name, call: null, construct: null };
+  for (const mode of ['call', 'construct']) {
+    try {
+      if (mode === 'call') Ctor();
+      else Reflect.construct(Ctor, []);
+      result[mode] = { ok: true };
+    } catch (error) {
+      result[mode] = {
+        ok: false,
+        errorName: error && error.name,
+        errorConstructor: error && error.constructor && error.constructor.name,
+        message: error && error.message,
+        string: String(error),
+        stackFirstLine: String(error && error.stack || '').split('\n')[0],
+      };
+    }
+  }
+  return result;
+}
+```
+
+交付前用 `check_webapi_addon_coverage.js` 检查泛化 `Illegal constructor` 和错误类型风险；发现问题时先补采样，再修复构造函数。
 
 ## 可选 native addon
 
@@ -321,7 +368,7 @@ navigator.constructor.name
 - 对不可写、不可枚举、只读 getter 要显式设置；真实浏览器是 accessor 的属性不得降级为 data descriptor。
 - getter / setter 的 `Function.prototype.toString.call(descriptor.get)` / `descriptor.set` 也要 native-like。
 - `constructor` 通常不可枚举，并且构造函数本身也要做 toString 保护。
-- `Symbol.toStringTag` 与 `NativeProtect.setObjFunc(obj, "Xxx")` 可用于 JS fallback 的 `[object Xxx]`。
+- `Symbol.toStringTag` 与 `NativeProtect.setObjFunc(obj, "Xxx")` 只能用于 JS fallback 的 `[object Xxx]`；addon 创建的实例不要再额外调用 `markObjectType` / `markObjectToString`。
 - 发现 `instanceof`、`Object.getPrototypeOf`、`constructor.name` 检测时，补构造函数和完整原型链。
 
 ## 网络代理检测

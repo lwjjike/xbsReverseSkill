@@ -240,6 +240,34 @@ function inspectFile(root, file, args) {
   const semicolonDense = lines.filter(line => (line.match(/;/g) || []).length >= 6);
   if (semicolonDense.length) problems.push(`发现 ${semicolonDense.length} 行包含大量分号，疑似压缩或多语句堆叠。`);
 
+  const denseLineProblems = [];
+  lines.forEach((rawLine, idx) => {
+    const line = stripJsLine(rawLine);
+    if (!line) return;
+    const lineNo = idx + 1;
+    const defineCount = (line.match(/\b(?:Object\.defineProperty|Object\.defineProperties|defineValue|defineNativeValue|defineNativeGetter|defineNativeSetter|defineNativeAccessor)\s*\(/g) || []).length;
+    if (defineCount >= 2) {
+      denseLineProblems.push(`第 ${lineNo} 行同时包含 ${defineCount} 个属性定义调用，应拆成多行并补充 descriptor 说明。`);
+    }
+    if (/(?:Object\.defineProperty|Object\.defineProperties)\s*\([^;]+\{[^{}\n]*(?:value|get|set|writable|enumerable|configurable)[^{}\n]*\}[^;]*;?$/.test(line) && line.length > 110) {
+      denseLineProblems.push(`第 ${lineNo} 行把属性描述符压在一行，建议展开 value/get/set/writable/enumerable/configurable。`);
+    }
+    if (/\bObject\.assign\s*\([^;]*\{.*\{.*\}/.test(line)) {
+      denseLineProblems.push(`第 ${lineNo} 行疑似用 Object.assign 堆叠对象和方法，补环境代码应拆为 createProtoChains 与 defineProperty。`);
+    }
+    if (/\b(?:ctx|window|globalThis|globalObject|self)\s*(?:\.|\[).*=.*\{.*(?:function\b|=>|\b[A-Za-z_$][\w$]*\s*\([^)]*\)\s*\{)/.test(line)) {
+      denseLineProblems.push(`第 ${lineNo} 行把全局 WebAPI 对象、方法或函数堆在一行，建议拆成模块化安装函数。`);
+    }
+    if (/\b(?:if|for|while|try|catch|finally)\b[^{;\n]*\{[^{}\n]*;[^{}\n]*\}/.test(line) && line.length > 120) {
+      denseLineProblems.push(`第 ${lineNo} 行存在较长的单行控制流代码块，建议展开为多行。`);
+    }
+    if (/\bfunction\b[^{;\n]*\{[^{}\n]*;[^{}\n]*\}/.test(line) && line.length > 120) {
+      denseLineProblems.push(`第 ${lineNo} 行存在单行函数体，建议提取为具名函数并展开实现。`);
+    }
+  });
+  if (denseLineProblems.length) problems.push(...denseLineProblems.slice(0, 30));
+  if (denseLineProblems.length > 30) problems.push(`还有 ${denseLineProblems.length - 30} 个疑似单行堆叠问题未逐条展示，请先格式化源码后重新检查。`);
+
   if (/\bdebugger\s*;/.test(text)) problems.push('存在 debugger 语句，最终代码不得保留调试断点。');
   if (/TODO|FIXME|临时|随便|测试用|先这样|debug/i.test(text)) warnings.push('发现 TODO/FIXME/临时/调试类标记，交付前建议清理或改为正式说明。');
   if (/\b(?:var\s+[a-z]\b|function\s+[a-z]\s*\(|const\s+[a-z]\s*=|let\s+[a-z]\s*=)/.test(text)) warnings.push('发现过短变量或函数名，建议使用表达业务含义的命名。');

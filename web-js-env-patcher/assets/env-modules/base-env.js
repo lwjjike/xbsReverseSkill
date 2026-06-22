@@ -53,6 +53,11 @@ function createNativeConstructor(name, length, impl, addon) {
   return markNativeFunction(Ctor, name);
 }
 
+function throwIllegalConstructor(name, addon) {
+  if (protect && protect.throwIllegalConstructor) return protect.throwIllegalConstructor(name, addon);
+  throw new TypeError(`Failed to construct '${name}': Illegal constructor`);
+}
+
 function installBaseEnv(globalObject, fixture = {}, options = {}) {
   const addon = options.addon || null;
   const browser = fixture.browser || {};
@@ -60,16 +65,13 @@ function installBaseEnv(globalObject, fixture = {}, options = {}) {
   const url = new URL(pageUrl);
 
   const Window = createNativeConstructor('Window', 0, function Window(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Window': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Window', addon);
   }, addon);
   const Location = createNativeConstructor('Location', 0, function Location(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Location': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Location', addon);
   }, addon);
   const Navigator = createNativeConstructor('Navigator', 0, function Navigator(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Navigator': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Navigator', addon);
   }, addon);
 
   defineValue(Window.prototype, 'constructor', Window, { writable: true, enumerable: false, configurable: true });

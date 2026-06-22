@@ -22,6 +22,7 @@
 | `getMimeTypesAndPlugins()` | 可用 | 创建浏览器风格 `navigator.mimeTypes` / `navigator.plugins` |
 | `createUndetectable(callback[, handlers])` | 高级 | 创建 V8 undetectable 对象，常用于 `document.all` / HTMLDDA 近似 |
 | `throwTypeError(message)` | 辅助 | 从 addon 抛出浏览器风格 `TypeError` |
+| `throwBrowserTypeError(message)` / `throwIllegalConstructor(name)` / `throwConstructorRequiresNew(name)` | helper | `native-protect.js` 中的封装 helper，内部优先 `addon.throwTypeError`，用于复现浏览器采样到的构造函数错误信息 |
 | `createNativeObject(options)` | 兼容 / 旧式 | 旧式单对象 API；新代码尽量迁移到 `createProtoChains` |
 | `hello()` | 调试 | 不要在正式补环境中依赖 |
 
@@ -81,6 +82,27 @@ Object.defineProperty(Storage.prototype, 'getItem', {
 - 第一个参数为 `false` 时不可被 `new`。
 - 第一个参数为 `true` 时允许构造；只有 `new Fn()` 时 callback 第一参数才是 `isNew === true`。
 - `length` 会影响函数 `.length`，不要随意写错。
+- 构造函数 callback 内的报错类型和 message 必须来自目标浏览器采样；不要统一写 `throw new TypeError('Illegal constructor')`。
+
+构造函数错误推荐写法：
+
+```js
+const native = require('./native-protect');
+
+const { Node } = native.createProtoChains([
+  {
+    name: 'Node',
+    length: 0,
+    constructor(isNew) {
+      if (isNew) return native.throwIllegalConstructor('Node', addon);
+      return native.throwIllegalConstructor('Node', addon);
+    },
+    instanceFactoryName: 'createNode',
+  },
+], addon);
+```
+
+如果浏览器采样结果不是 `Failed to construct 'Xxx': Illegal constructor`，不要使用该 helper，要按 `constructor-errors.fixture.json` 中的 `message` 调用 `throwBrowserTypeError(message)` 或实现对应错误类型。
 
 ## `createGetter` / `createSetter`
 
@@ -130,6 +152,13 @@ getter / setter 本身也要满足 native-like `toString()`，不要用普通函
 | `isCreateInstance` / `instanceName` | 旧式立即创建实例，能不用就不用 |
 
 推荐一次性把继承、别名、不可变选项定义完整，避免后续跨调用复用时重复修改同一构造函数结构。
+
+`createProtoChains` 通过 addon 创建出的实例通常已经具备正确的 `Object.prototype.toString.call(instance)` 行为。不要再对 addon 创建出的实例额外调用 `markObjectType`、`markObjectToString` 或手写 `Symbol.toStringTag`。这些只允许用于 addon 不可用时的 JS fallback。
+
+`markObjectType` 不是本 Skill 批准的 API 名称；如果在生成代码中出现，应视为错误并改为：
+
+- addon 可用：使用 `createProtoChains` / addon 构造函数实例工厂。
+- addon 不可用：使用 `Symbol.toStringTag` + `NativeProtect.setObjFunc` / `markObjectToString` fallback，并记录降级原因。
 
 ## `createUndetectable(callback[, handlers])`
 

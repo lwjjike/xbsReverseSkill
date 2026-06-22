@@ -44,13 +44,17 @@ function createNativeConstructor(name, length, impl, addon) {
   return markNativeFunction(Ctor, name);
 }
 
+function throwIllegalConstructor(name, addon) {
+  if (protect && protect.throwIllegalConstructor) return protect.throwIllegalConstructor(name, addon);
+  throw new TypeError(`Failed to construct '${name}': Illegal constructor`);
+}
+
 function installStorage(globalObject, fixture = {}, options = {}) {
   const addon = options.addon || null;
   const request = fixture.request || {};
 
   const Storage = createNativeConstructor('Storage', 0, function Storage(isNew) {
-    if (isNew) throw new TypeError("Failed to construct 'Storage': Illegal constructor");
-    throw new TypeError('Illegal constructor');
+    return throwIllegalConstructor('Storage', addon);
   }, addon);
   defineValue(Storage.prototype, 'constructor', Storage, { writable: true, enumerable: false, configurable: true });
   markObjectToString(Storage.prototype, 'Storage');

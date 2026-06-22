@@ -655,6 +655,26 @@ function throwTypeError(message, addon) {
   throw new TypeError(String(message));
 }
 
+function throwBrowserTypeError(message, addon) {
+  return throwTypeError(String(message), addon);
+}
+
+function illegalConstructorMessage(name) {
+  return `Failed to construct '${String(name)}': Illegal constructor`;
+}
+
+function constructorRequiresNewMessage(name) {
+  return `Failed to construct '${String(name)}': Please use the 'new' operator, this DOM object constructor cannot be called as a function.`;
+}
+
+function throwIllegalConstructor(name, addon) {
+  return throwBrowserTypeError(illegalConstructorMessage(name), addon);
+}
+
+function throwConstructorRequiresNew(name, addon) {
+  return throwBrowserTypeError(constructorRequiresNewMessage(name), addon);
+}
+
 function defineNativeValue(obj, key, impl, options = {}, addon) {
   const fn = createNativeFunction(options.name || String(key), options.length ?? impl.length, impl, addon);
   return defineValue(obj, key, fn, {
@@ -711,6 +731,11 @@ module.exports = {
   setPrivate,
   getPrivate,
   throwTypeError,
+  throwBrowserTypeError,
+  illegalConstructorMessage,
+  constructorRequiresNewMessage,
+  throwIllegalConstructor,
+  throwConstructorRequiresNew,
   defineNativeValue,
   defineNativeGetter,
   defineNativeSetter,
