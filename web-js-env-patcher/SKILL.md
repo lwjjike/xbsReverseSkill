@@ -2,8 +2,7 @@
 
 name: web-js-env-patcher
 
-description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于用户要求网页端 JS 补环境、Node.js 补环境、env.js/runner.js 编写、缺失浏览器环境追踪、Proxy 探测、真实对象固化、toString/native-like 保护、属性描述符 / 原型链默认保护、addon-first 默认补环境、新版 addon API 使用、通用代码变更记忆防回退、补环境代码可读性与中文注释质量检查、document.all 特殊对象处理、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等浏览器指纹终端 API 真实采样值回放、fixtures 样本验证、定位 sign/x-s/a_bogus/h5st/token 等 Web 加密参数、校验 cURL/HAR/请求样本、收集 JS bundle/chunk/sourcemap、Hook/XHR/fetch 断点定位、source/entry/builder/writer 链路梳理、Node 泄露阻断、静默失败排查、非登录 Cookie/设备 Cookie/风控 Cookie/JS 生成 Cookie 过期的来源分类与生成链路补环境、Level 1/2/3 补环境分层、从任务前置阶段即确认最终请求 TLS 指纹兼容客户端（Node.js CycleTLS/impers/curl-cffi、Python curl_cffi/cffi_curl/cyCronet）并在最终入口中使用所选客户端发送少量授权模拟请求、处理用户手动登录/已经登录成功后的继续流程，项目完成后默认生成中文命名 UTF-8 总结 result/最终项目总结.md，并在多轮任务中生成中文命名阶段报告，或从任务开始即确认 ruyiPage + RuyiTrace、仅 ruyiPage、Camoufox + camoufox-reverse-mcp、仅 Camoufox、CloakBrowser、用户手动取证、AI 自行决定等取证模式，并在授权范围内沿用所选工具完成浏览器取证与补环境日志采集；支持 Camoufox / camoufox-reverse-mcp 的安装检测、安装引导、官方启动硬约束、网络取证、脚本搜索、Hook、请求发起栈和可选引擎层属性访问追踪。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写。"
-
+description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、通用代码变更记忆、中文注释质量、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露与静默失败排查、Cookie 生成链路、Level 1/2/3 分层、TLS 指纹兼容请求客户端（CycleTLS/impers/curl-cffi/curl_cffi/cffi_curl/cyCronet）、按推进节点生成中文阶段报告并记录 WebAPI/功能/Bug/指纹/测试/清理增量、最终总结、ruyiPage/RuyiTrace、Camoufox/camoufox-reverse-mcp、CloakBrowser 取证。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
 ---
 
 
@@ -31,6 +30,8 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 - 不处理 App、Android、iOS、小程序、Windows、EXE、DLL、Native、Frida、IDA、JADX、Ghidra 等任务。
 
 - 默认不做纯算重写，除非用户明确改变任务范围。
+
+- **不主动分析 JSVMP 源码**：遇到 JSVMP、虚拟机混淆、opcode、dispatch、字节码解释器等内容时，不主动阅读、还原、反混淆或解释虚拟机源码；本 Skill 只围绕网页端补环境、请求链路、writer、环境调用和样本验证推进。若必须进入 JSVMP 算法源码分析，先暂停并说明这已超出默认补环境流程，等待用户明确改变范围。
 
 
 
@@ -87,7 +88,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 - `references/validation.md`：当需要测试 Skill 行为、编写预期提醒、检查边界场景时读取。
 
-- `references/stage-markdown-reports.md`：每个高难度、多轮对话或需要沉淀阶段结论的 case 从前置阶段开始读取；用于默认生成 `case/阶段报告/01-需求信息确认.md`、`02-取证方案确认.md`、`03-请求样本与可疑参数确认.md` 等中文命名 UTF-8 Markdown 阶段报告。
+- `references/stage-markdown-reports.md`：每个高难度、多轮对话或需要沉淀阶段结论的 case 从前置阶段开始读取；用于默认生成 `case/阶段报告/01-需求信息确认.md` 等中文命名 UTF-8 Markdown 阶段报告，并在每个合适推进节点记录项目进展、修改文件、新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、真实性保护、测试结果、清理状态、风险和下一步计划。
 
 - `references/final-project-summary.md`：项目完成后或准备最终交付时必须读取并生成 `result/最终项目总结.md`；最终总结是默认硬性产物，除非用户明确要求不生成。报告文件名必须为中文，必须用 UTF-8 写入，必须包含 native addon / NativeProtect 使用情况；RuyiTrace 章节仅在用户选择 ruyiPage + RuyiTrace 或提供 RuyiTrace NDJSON 时保留。
 
@@ -113,7 +114,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 7. **信息完整时**：先整理任务确认信息，让用户确认后再继续。确认内容必须包含网站 URL、API、方法、参数名、参数位置、请求样本、响应样本、已知 JS 文件、是否需要登录、取证模式、最终请求 TLS 指纹兼容客户端。
 
-8. **阶段报告默认生成**：从需求信息确认阶段开始，默认读取 `references/stage-markdown-reports.md` 并生成中文命名阶段报告；即使信息不完整，也要写入 `case/阶段报告/01-需求信息确认.md`，记录已提供信息、缺失项、阻塞点和下一步需要用户确认的问题。后续每个关键阶段结束后继续生成或更新 `02-取证方案确认.md`、`03-请求样本与可疑参数确认.md`、`04-JS文件与入口定位.md`、`05-补环境前置分析.md`、`06-补环境实现记录.md`、`07-验证与清理记录.md`。除非用户明确要求不生成阶段报告，否则不得只在最后生成一个总结文件。
+8. **阶段报告默认生成**：从需求信息确认阶段开始，默认读取 `references/stage-markdown-reports.md` 并生成中文命名阶段报告；即使信息不完整，也要写入 `case/阶段报告/01-需求信息确认.md`，记录已提供信息、缺失项、阻塞点和下一步需要用户确认的问题。后续不要只按固定编号机械生成，而要在每个合适推进节点结束后立即写入或更新阶段报告，例如取证方案确认、请求样本与可疑参数确认、JS 文件与入口定位、补环境前置分析、补环境实现、测试清理、WebAPI 补齐、指纹回放、Bug 修复、addon 接口更新、通用代码变更记忆更新等。阶段报告内容必须包含当前进展、修改文件、新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、真实性保护变化、测试结果、清理状态、风险和下一步计划；除非用户明确要求不生成阶段报告，否则不得只在最后生成一个总结文件。
 
 9. **先做前置验证**：在写 `env.js` 或正式补环境代码之前，先确认请求样本中确实存在目标加密参数，并确认相关 JS 文件可以获取。
 
@@ -137,7 +138,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 19. **进入补环境阶段前再次确认**：只有在参数、入口、JS 文件、样本、取证模式和最终请求客户端都已确认后，才进入 Node.js 缺失环境追踪和补环境代码阶段。
 
-20. **RuyiTrace 优先诊断**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/missing-env-priority.md` 后再补环境。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`。
+20. **RuyiTrace 优先诊断与长字段截断保护**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/missing-env-priority.md` 后再补环境。RuyiTrace 中达到或接近 4000 字符的字符串字段必须视为疑似截断：只能记录可见长度、最小长度和 hash，真实长度写 `unknown`，不得把 4000 或可见长度当成加密参数真实长度；需要完整值时必须通过 HAR/cURL、ruyiPage 网络抓包、专用 Hook 分片落盘或最终 signer 输出补采。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`。
 
 21. **指纹值回放优先**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等浏览器指纹时，不要在 Node.js 中强行复刻渲染管线，也不要因 node-canvas / headless-gl / jsdom 等结果不一致而建议最终改用浏览器自动化；应先用已确认取证模式采集真实浏览器终端 API 返回值、调用参数和调用栈，再在 Node.js 交付环境中按调用特征回放。缺少指纹样本时必须阻塞并提示补采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
 
@@ -164,7 +165,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 33. **TLS 指纹兼容不是访问控制绕过**：TLS 指纹兼容客户端用于复现浏览器网络栈差异导致的最终验证请求。
 
-34. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程生成其他阶段报告。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查，确认代码可读性与中文注释质量、补环境真实性、addon-first/native fallback 记录、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python 客户端实现、无多余测试/临时产物。
+34. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程与合适推进节点生成其他阶段报告。阶段报告要覆盖本阶段新增 / 修改 WebAPI、功能、Bug 修复、指纹能力、真实性保护、测试与清理等能力增量，交付前可运行 `scripts/check_stage_reports.js --case-dir case --require-dynamic-fields --markdown` 检查。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查，确认代码可读性与中文注释质量、补环境真实性、addon-first/native fallback 记录、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python 客户端实现、无多余测试/临时产物。
 
 35. **清理策略**：每个测试命令、脚本验证或阶段结束后立即清理本步骤产生的临时 hook、trace、日志、缓存、失败下载、无用 HAR、临时截图、临时响应、空文件和空目录；不要等项目完全结束后再统一清理。最终回复前必须复查清理结果。登录态 Profile、Cookie、localStorage 按敏感材料处理，删除前必须确认用户意图。
 
@@ -317,6 +318,7 @@ node scripts/download_ruyi_tool.js --tool ruyipage-firefox --dest <download-dir>
 ```bash
 
 node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --markdown
+node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --truncation-threshold 3900 --json
 
 ```
 
@@ -495,10 +497,13 @@ node scripts/write_markdown_utf8.js --out case/result/最终项目总结.md --re
 ```bash
 node scripts/write_stage_report.js --case-dir case --stage 需求信息确认 --data case/notes/需求信息.json --markdown
 node scripts/write_stage_report.js --case-dir case --stage 请求样本与可疑参数确认 --input case/tmp/可疑参数草稿.md --markdown
+node scripts/write_stage_report.js --case-dir case --stage WebAPI补齐阶段报告 --index 08 --data case/notes/阶段进展.json --markdown
+node scripts/write_stage_report.js --case-dir case --stage Bug修复与回归测试报告 --index 11 --data case/notes/回归测试.json --markdown
 node scripts/check_stage_reports.js --case-dir case --require-stage 需求信息确认 --markdown
+node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐阶段报告 --require-dynamic-fields --require-capability-report --markdown
 ```
 
-用于多轮高难度 case 的阶段性沉淀。阶段报告默认写入 `case/阶段报告/`，文件名必须包含中文，例如 `01-需求信息确认.md`、`03-请求样本与可疑参数确认.md`。信息不完整时也要生成 `01-需求信息确认.md`，记录已提供信息、缺失项和下一步需要用户确认的问题。
+用于多轮高难度 case 的阶段性沉淀。阶段报告默认写入 `case/阶段报告/`，文件名必须包含中文，例如 `01-需求信息确认.md`、`03-请求样本与可疑参数确认.md`、`08-WebAPI补齐阶段报告.md`、`11-Bug修复与回归测试报告.md`。信息不完整时也要生成 `01-需求信息确认.md`，记录已提供信息、缺失项和下一步需要用户确认的问题；完成一轮 WebAPI 补齐、指纹回放、Bug 修复、测试清理或工程机制更新后，应生成动态阶段报告，记录本阶段新增 / 修改 WebAPI、新增功能、修复 Bug、指纹能力、真实性保护、测试结果、清理情况、风险和下一步计划。
 
 
 
@@ -587,7 +592,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 通用代码变更记忆：复杂 case 默认维护 `case/notes/代码变更记忆.md`；修改关键源码前读取，修改后记录失败尝试、禁止回退、验证范围和遗留风险
 
-- 阶段报告：默认从 `case/阶段报告/01-需求信息确认.md` 开始按阶段生成中文命名 Markdown；如不需要生成必须明确说明
+- 阶段报告：默认从 `case/阶段报告/01-需求信息确认.md` 开始，并在每个合适推进节点生成中文命名 Markdown；内容包含项目进展、修改文件、新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、测试和清理；如不需要生成必须明确说明
 
 - 最终总结：默认生成 `result/最终项目总结.md`；如不需要生成必须明确说明
 
@@ -617,7 +622,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 11. 如用户选择 RuyiTrace，先导入 NDJSON 日志、输出环境访问摘要，并把相关 `api` / `stack.file` / `line` / `col` 作为后续补环境优先依据。
 
-12. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env。
+12. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
 
 13. 输出补环境前置分析结论。
 
@@ -651,7 +656,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 已确认最终请求 TLS 指纹兼容客户端与可用性。
 
-- 如果选择 ruyiPage + RuyiTrace：RuyiTrace NDJSON 导入状态、摘要位置和优先环境依赖结论。
+- 如果选择 ruyiPage + RuyiTrace：RuyiTrace NDJSON 导入状态、摘要位置、长字段截断风险、完整值补采状态和优先环境依赖结论。
 
 - Cookie 过期分类与生成 / 刷新链路判断（若涉及）。
 
@@ -661,7 +666,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 进入 Node.js 补环境阶段前的用户确认。
 
-- 阶段报告写入状态：至少 `case/阶段报告/01-需求信息确认.md`，并按实际进度生成后续中文命名阶段报告。
+- 阶段报告写入状态：至少 `case/阶段报告/01-需求信息确认.md`，并按实际进度和合适推进节点生成后续中文命名阶段报告，记录当前能力增量、测试和清理结果。
 
 
 
@@ -675,7 +680,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 探测模式 trace 摘要。
 
-- 如果选择 ruyiPage + RuyiTrace：先给出 NDJSON 证据摘要，再说明 Node trace / Proxy 只是补充验证。
+- 如果选择 ruyiPage + RuyiTrace：先给出 NDJSON 证据摘要和长字段截断风险，再说明 Node trace / Proxy 只是补充验证。
 
 - 缺失环境列表与补齐优先级。
 
@@ -696,6 +701,8 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 - 临时 trace / 日志清理结果。
 
 - 最终规范项目目录：入口 `result/final.js` 或 `result/final.py`，必要模块位于 `result/src/` 等目录，并默认包含 `result/最终项目总结.md`。
+
+- 阶段报告写入状态：本阶段新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、真实性保护、测试内容、清理结果、风险与下一步计划是否已写入中文阶段报告。
 
 - 最终项目检查结果：只有一个执行入口、无多余测试/临时文件、无浏览器自动化代码、补环境代码简洁可读且中文注释 UTF-8 正常、指纹值由 Node.js 终端 API 回放实现、最终请求由已确认的 Node.js / Python TLS 指纹兼容客户端实现，或用户明确选择不发真实请求；最终项目未硬编码或复用 cURL / fixture 中的加密参数样本值，而是通过补环境后的目标 JS 入口 / signer 生成；最终总结已生成且 UTF-8 中文正常，除非用户明确要求不生成。
 

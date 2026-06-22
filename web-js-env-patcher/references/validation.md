@@ -1334,3 +1334,106 @@ node scripts/check_change_memory.js --case-dir case --changed result/src/env/ins
 - `--init` 创建 `case/notes/代码变更记忆.md`，并包含修改前逻辑、问题证据、本次修改、修改理由、已失败尝试、禁止回退、验证命令、验证结果、当前验证范围、遗留风险、当前状态等字段。
 - 若指定的 `--changed` 文件未出现在记忆文件中，检查失败。
 - 记录中如果出现“正确方案”这种无验证范围的绝对表述，应提醒改为“当前验证通过”或“稳定基线”。
+
+## 测试 81：动态阶段报告生成
+
+输入场景：完成一轮 WebAPI 补齐、指纹回放或 Bug 修复后，需要沉淀本阶段进展。
+
+执行：
+
+```bash
+node scripts/write_stage_report.js --case-dir case --stage WebAPI补齐阶段报告 --index 08 --data case/notes/阶段进展.json --markdown
+```
+
+期望：
+
+- 生成 `case/阶段报告/08-WebAPI补齐阶段报告.md`。
+- 文件名包含中文并按 UTF-8 写入。
+- 报告包含当前阶段目标、当前项目进展、本阶段修改文件、本阶段新增 / 修改的 WebAPI、本阶段新增功能、本阶段修复的 Bug、本阶段新增 / 修改的指纹能力、真实性保护变化、本阶段测试内容与结果、清理情况、风险与遗留问题、下一步计划。
+- 即使某个栏目暂无内容，也要写明“无”或“未提供”，不能省略章节。
+
+## 测试 82：动态阶段报告能力字段检查
+
+输入场景：`case/阶段报告/08-WebAPI补齐阶段报告.md` 已生成。
+
+执行：
+
+```bash
+node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐阶段报告 --require-dynamic-fields --require-capability-report --markdown
+```
+
+期望：
+
+- 检查脚本能识别 `08-WebAPI补齐阶段报告.md` 这种“编号 + 中文阶段名”的自定义报告。
+- 缺少 WebAPI、功能、Bug、指纹、真实性保护、测试、清理、风险等章节时检查失败。
+- 报告中出现连续问号或替换字符乱码时检查失败。
+- 中文内容正常时检查通过。
+
+## 测试 83：阶段报告应记录能力增量
+
+输入场景：本阶段新增 `navigator.userAgent`、`canvas.toDataURL` 指纹回放，并修复 `localStorage.getItem` 描述符错误。
+
+期望：
+
+- `本阶段新增 / 修改的 WebAPI` 表格记录 WebAPI、挂载位置、类型、实现方式、addon-first 状态、证据来源和测试结果。
+- `本阶段新增功能` 记录功能入口和对最终产物的影响。
+- `本阶段修复的 Bug` 记录原因、修复方式、涉及文件、验证结果和防回退记录。
+- `本阶段新增 / 修改的指纹能力` 记录指纹类型、API、真实样本来源、回放方式和风险。
+- `真实性保护变化` 记录函数 toString、访问器 toString、属性描述符、原型链、实例对象 toString、document.all、addon 使用情况和 fallback 原因。
+
+## 测试 84：阶段报告与临时产物清理联动
+
+输入场景：阶段测试中创建了 trace、临时响应、临时 Hook 或缓存目录。
+
+期望：
+
+- 阶段报告的 `清理情况` 记录已清理项、保留证据和敏感材料处理方式。
+- 测试结束后立即删除本阶段临时产物。
+- 最终回复前再次运行或说明 `clean_case.js --dry-run` 的结果。
+- 不得把 hook、trace、HAR、截图、Profile、缓存或临时响应作为最终交付物保留在 `result/`。
+
+## 测试 85：RuyiTrace 长字段截断风险检测
+
+输入场景：RuyiTrace NDJSON 中某个字段可见长度达到 4000 字符，例如 `args[0]` 是一个超长加密参数、长 token、长 Cookie、请求 body 或 dataURL。
+
+执行：
+
+```bash
+node scripts/import_ruyitrace_log.js --input trace.ndjson --case-dir case --truncation-threshold 3900 --markdown
+```
+
+期望：
+
+- `notes/ruyitrace-summary.md` 包含 `长字段截断风险` 章节。
+- 摘要记录 API、字段路径、可见长度、调用栈、可见值 SHA256。
+- 真实长度必须写为 `unknown`，最小长度写为可见长度。
+- 不得输出“该加密参数长度为 4000”这类把可见长度误判为真实长度的结论。
+- 如果该字段影响签名或请求验证，必须提示通过 HAR / cURL / ruyiPage 网络抓包 / 专用 Hook 分片落盘 / 最终 signer 输出补采完整值。
+
+## 测试 86：RuyiTrace 长字段 JSON 输出不保留完整长字符串
+
+输入场景：NDJSON 示例事件包含长度大于等于阈值的字符串。
+
+执行：
+
+```bash
+node scripts/import_ruyitrace_log.js --input trace.ndjson --case-dir case --truncation-threshold 3900 --json
+```
+
+期望：
+
+- JSON 输出中的 `summary.truncation.totalSuspectedFields` 大于 0。
+- `summary.truncation.examples[]` 包含 `truncationSuspected: true`、`actualLength: "unknown"`、`minLength`、`visibleSha256`。
+- `summary.examples[]` 中对应长字符串被替换为元数据对象，不能直接输出完整长字符串诱导模型误读。
+- Markdown 与 JSON 都明确说明 RuyiTrace 可见长度不是完整长度。
+
+## 测试 87：不主动分析 JSVMP 源码
+
+输入场景：目标 JS 或调用栈显示存在 JSVMP、虚拟机解释器、opcode、dispatch 表、字节码数组或 VM handler。
+
+期望：
+
+- Skill 不主动阅读、还原、反混淆或解释 JSVMP 源码。
+- 仍可围绕补环境目标继续做：请求链路、writer、入口调用关系、环境 API 访问、RuyiTrace 证据、fixtures 对比。
+- 如必须进入 JSVMP 算法源码分析，应暂停并说明这超出默认网页端 Node.js 补环境流程，等待用户明确改变任务范围。
+- 不得把 JSVMP 反混淆作为默认前置任务，也不得在用户只要求补环境时主动生成 VM 源码分析计划。

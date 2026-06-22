@@ -29,6 +29,7 @@
    - navigator / screen / document / storage / canvas / WebGL / audio / crypto / performance / worker / iframe 等环境模块分类。
 5. 只有在 NDJSON 缺失、未覆盖当前路径、日志时间段不对应、或日志结论不足时，才使用 `run_with_trace.js`、Proxy trace、Hook 或断点作为补充。
 6. 输出补环境计划时，必须标明哪些环境依赖来自 RuyiTrace 证据，哪些只是 Node trace / 推断，避免把推断写成事实。
+7. RuyiTrace 长字符串字段可能被截断。导入日志后，如果任意字符串字段达到或接近 4000 字符，必须标记为疑似截断：真实长度写 `unknown`，最小长度写可见长度，不能把 4000 或可见长度解释为加密参数真实长度。
 
 如果用户选择了 ruyiPage + RuyiTrace 但尚未提供日志，进入补环境或遇到环境问题时应先暂停并提醒用户采集 / 提供 NDJSON；除非用户明确确认无法提供，才降级为 ruyiPage 网络证据 + Node trace 流程。
 
@@ -269,6 +270,7 @@ packets = page.capture.wait(timeout=30, count=1)
 
 ```bash
 node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --markdown
+node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --truncation-threshold 3900 --markdown
 ```
 
 高级手动启动方式仅在用户理解环境变量时使用：
@@ -290,6 +292,35 @@ set MOZ_DISABLE_LAUNCHER_PROCESS=1
 | `MOZ_DOM_TRACE_LIMIT=<n>` | 单进程行数上限 |
 | `MOZ_DOM_TRACE_PTYPE=<list>` | 启用 trace 的进程类型 |
 | `MOZ_DISABLE_LAUNCHER_PROCESS=1` | Windows 下避免 launcher 提前退出 |
+
+
+## RuyiTrace 长字段截断保护
+
+RuyiTrace NDJSON 适合作为高保真环境访问日志，但长字符串字段可能因工具显示或记录限制被截断。典型风险是某个加密参数、长 token、长 Cookie、请求 body、dataURL 或大型对象序列化值真实长度为数万字符，但日志中只保留约 4000 字符。
+
+硬性规则：
+
+- 导入 NDJSON 时必须运行带截断检测的脚本，默认阈值为 3900：
+
+```bash
+node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --truncation-threshold 3900 --markdown
+```
+
+- 任何字符串字段长度达到或接近阈值时，统一标记：
+  - `truncationSuspected: true`
+  - `visibleLength: <日志中可见长度>`
+  - `minLength: <日志中可见长度>`
+  - `actualLength: unknown`
+- 不得写“该加密参数长度为 4000”。只能写“RuyiTrace 可见长度为 4000，疑似被截断，真实长度未知，至少 4000”。
+- 不得把 RuyiTrace 中的长字段可见值直接作为 fixture 期望值或最终参数值。
+- 如果该字段影响签名、指纹回放或最终请求验证，必须从以下来源补采完整值：
+  1. HAR / cURL / Network 完整请求。
+  2. ruyiPage `collect_bodies=True` 网络抓包。
+  3. 专用 Hook 对 writer 或加密入口做分片落盘，并记录完整长度、SHA256、前后片段。
+  4. 最终 Node.js signer 输出，并与浏览器样本的完整长度或 hash 对比。
+- 写入 `notes/missing-env-priority.md`、阶段报告或最终总结时，必须区分“RuyiTrace 可见值”和“其他来源补采完整值”。
+
+摘要中出现 `## 长字段截断风险` 时，后续分析要先处理完整值补采问题，再判断参数长度、结构、hash、编码或是否可复现。
 
 ## 根据 RuyiTrace 日志补环境
 
