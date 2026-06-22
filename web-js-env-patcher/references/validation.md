@@ -1437,3 +1437,85 @@ node scripts/import_ruyitrace_log.js --input trace.ndjson --case-dir case --trun
 - 仍可围绕补环境目标继续做：请求链路、writer、入口调用关系、环境 API 访问、RuyiTrace 证据、fixtures 对比。
 - 如必须进入 JSVMP 算法源码分析，应暂停并说明这超出默认网页端 Node.js 补环境流程，等待用户明确改变任务范围。
 - 不得把 JSVMP 反混淆作为默认前置任务，也不得在用户只要求补环境时主动生成 VM 源码分析计划。
+
+## 测试 88：Node 21+ navigator 宿主泄露检测
+
+输入场景：当前 Node 宿主存在 `globalThis.navigator`，且 `navigator.userAgent` 可能为 `Node.js/<major>`。结论必须按 Node 官方文档写明：`navigator` 是 Node v21.0.0 新增，不是 Node 20 官方新增。
+
+执行：
+
+```bash
+node scripts/check_node_leakage.js --json
+node scripts/check_node_leakage.js --markdown
+```
+
+期望：
+
+- 输出 `navigator` 宿主信号，包含 `userAgent`、`platform`、`language`、`hardwareConcurrency`、`locks` 等摘要。
+- 如果 `navigator.userAgent` 以 `Node.js/` 开头，必须标记为 Node 宿主特征。
+- 目标运行上下文阻断清单包含 `宿主 navigator`、`navigator.userAgent=Node.js/<major>` 和 `navigator.locks`。
+- 进入补环境前必须删除 / 隔离宿主 navigator，再安装浏览器式 `Navigator` / `navigator`；如果真实浏览器样本也有 `navigator.locks`，必须按样本补，不得沿用 Node 宿主对象。
+
+## 测试 89：Node Web API 兼容层泄露检测
+
+输入场景：Node 宿主存在 `localStorage`、`sessionStorage`、`performance`、`fetch`、`Headers`、`Request`、`Response`、`WebSocket`、`BroadcastChannel`、`MessageChannel`、`URL`、`URLSearchParams`、`TextEncoder`、`TextDecoder`、Streams、Events、`crypto`、`WebAssembly` 或 `queueMicrotask` 等兼容 Web API。
+
+执行：
+
+```bash
+node scripts/check_node_leakage.js --markdown
+```
+
+期望：
+
+- 输出宿主 Node Web API 兼容层状态。
+- `performance` 宿主信号应检查 `nodeTiming`、`eventLoopUtilization`、`timerify`、`markResourceTiming`。
+- 阻断清单必须包含宿主 Storage、Node performance 专属字段、宿主 fetch / undici、宿主 WebSocket、消息通道，以及 `URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现。
+- 最终 env 不得盲目透传这些宿主对象；必须用浏览器 fixture、RuyiTrace 证据、可控补环境实现或桩函数覆盖。
+
+## 测试 90：run_with_trace 增强 Node 泄露自检
+
+输入场景：目标 JS 主动读取：
+
+```javascript
+typeof process;
+typeof Buffer;
+typeof require;
+typeof module;
+typeof global;
+Function("return typeof process")();
+navigator.userAgent;
+"nodeTiming" in performance;
+"eventLoopUtilization" in performance;
+"timerify" in performance;
+typeof localStorage;
+typeof sessionStorage;
+typeof fetch;
+```
+
+执行：
+
+```bash
+node scripts/run_with_trace.js --target case/js/original/leak.js --entry window.makeSign --fixture case/fixtures/sample.fixture.json --summary case/tmp/missing-env.json --output case/tmp/node-output.json --markdown
+```
+
+期望：
+
+- `missing-env.json.nodeLeakage.process/Buffer/require/module/global/functionProcess` 均为 `undefined`。
+- `nodeLeakage.navigatorIsNodeUserAgent` 为 `false`。
+- `nodeLeakage.navigatorUserAgent` 来自 fixture 或浏览器样本，不能是 `Node.js/<major>`。
+- `nodeLeakage.performanceNodeTiming`、`performanceEventLoopUtilization`、`performanceTimerify` 均为 `absent`。
+- `localStorage/sessionStorage` 可以存在，但必须是补环境安装的浏览器式 Storage，不得是 Node 宿主 Storage。
+- 如果任一 Node 宿主信号存在，应先修隔离层，不得继续补环境。
+
+## 测试 91：env-object-model 不降低真实性基线
+
+输入场景：需要补 `navigator`、`location`、`document`、`Storage`、`crypto`、`performance`、`fetch` 或 `XMLHttpRequest` 等对象模型。
+
+期望：
+
+- `env-object-model.md` 必须明确“最小范围，完整真实性”，不能把最小对象模型解释成先普通对象 / 普通赋值 / 普通函数跑通。
+- 进入补环境范围的 WebAPI，必须默认先执行 addon-first、构造函数 / 原型链 / 实例工厂、属性描述符、访问器、`Symbol.toStringTag`、非法构造行为和 native-like 保护。
+- `navigator`、`location`、`Storage`、`document.cookie`、`Date` / `performance` 等章节不得写成“检测到再补原型链 / toString / descriptor”的主流程。
+- addon 可用时 getter / setter / 方法 / 构造函数 / `document.all` / 原型链必须优先使用 addon API；addon 不可用时才使用 `NativeProtect` / JS fallback，并记录降级原因。
+- 原型链不是最终补的附加项，而是每个对象进入补环境范围时的第一步。

@@ -2,7 +2,7 @@
 
 name: web-js-env-patcher
 
-description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、通用代码变更记忆、中文注释质量、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露与静默失败排查、Cookie 生成链路、Level 1/2/3 分层、TLS 指纹兼容请求客户端（CycleTLS/impers/curl-cffi/curl_cffi/cffi_curl/cyCronet）、按推进节点生成中文阶段报告并记录 WebAPI/功能/Bug/指纹/测试/清理增量、最终总结、ruyiPage/RuyiTrace、Camoufox/camoufox-reverse-mcp、CloakBrowser 取证。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
+description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、通用代码变更记忆、中文注释质量、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露与静默失败排查（含 Node 21+ navigator、Storage、performance、fetch/WebSocket 等宿主 Web API 泄露阻断）、Cookie 生成链路、Level 1/2/3 分层、TLS 指纹兼容请求客户端（CycleTLS/impers/curl-cffi/curl_cffi/cffi_curl/cyCronet）、按推进节点生成中文阶段报告并记录 WebAPI/功能/Bug/指纹/测试/清理增量、最终总结、ruyiPage/RuyiTrace、Camoufox/camoufox-reverse-mcp、CloakBrowser 取证。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
 ---
 
 
@@ -59,7 +59,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 - `references/env-debug-loop.md`：当前置材料已确认，准备在 Node.js 中运行目标 JS、追踪缺失环境、生成 `env.js` / `runner.js` 骨架时读取。
 
-- `references/env-object-model.md`：当需要补 `window`、`document`、`navigator`、`location`、`Storage`、`crypto`、`performance`、`fetch`、`XMLHttpRequest` 等对象模型时读取。
+- `references/env-object-model.md`：当需要补 `window`、`document`、`navigator`、`location`、`Storage`、`crypto`、`performance`、`fetch`、`XMLHttpRequest` 等对象模型时读取；该文件只决定“补哪些对象”，不降低对象真实性要求，已补对象必须默认遵循 addon-first、构造函数 / 原型链 / 实例工厂、属性描述符、访问器、`Symbol.toStringTag`、非法构造行为和 native-like 保护。
 
 - `references/env-native-protection.md`：每次进入 Node.js 补环境阶段或准备编写 / 修改 env 模块时读取；toString、属性描述符、原型链、访问器、实例对象 toString 与 addon-first 不是等检测到才做，而是默认硬性基线，除非用户明确要求不保护或不使用 addon。
 - `references/addon-api.md`：每次进入补环境阶段、使用 `addon.node`、修改 `native-protect.js` / addon helper、处理 `createProtoChains` / `createNativeObject` / `createUndetectable` / `getMimeTypesAndPlugins` / `getPrivate` / `setPrivate` 时读取；新代码优先新版 API，禁止把旧式 `createProtoChains(name, chain)` 或 `createNativeObject(tag, proto, properties)` 写成主路径。
@@ -68,7 +68,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 - `references/fingerprint-value-replay.md`：当目标 JS 访问 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API，或 Node.js 第三方库模拟结果与真实浏览器不一致时读取；用于真实浏览器采样、终端 API 值回放、禁止最终流程退回自动化。
 
-- `references/node-leakage-and-silent-failure.md`：当进入 Node.js 运行、输出不一致、怀疑 Node 泄露、SDK init 缺参、时间随机或存储差异时读取。
+- `references/node-leakage-and-silent-failure.md`：当进入 Node.js 运行、输出不一致、怀疑 Node 泄露、SDK init 缺参、时间随机或存储差异时读取；补环境前必须读取，用于阻断 `process/Buffer/require/module/global` 以及 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ `localStorage/sessionStorage`、`performance.nodeTiming/eventLoopUtilization/timerify`、宿主 `fetch/WebSocket`、`URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等 Web API 兼容层泄露。
 
 - `references/env-module-levels.md`：当需要把 env 按 Level 1/2/3 分层、选择环境模块、复制 `assets/env-modules/` 模板时读取。
 
@@ -142,7 +142,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 21. **指纹值回放优先**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等浏览器指纹时，不要在 Node.js 中强行复刻渲染管线，也不要因 node-canvas / headless-gl / jsdom 等结果不一致而建议最终改用浏览器自动化；应先用已确认取证模式采集真实浏览器终端 API 返回值、调用参数和调用栈，再在 Node.js 交付环境中按调用特征回放。缺少指纹样本时必须阻塞并提示补采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
 
-22. **Node 泄露先阻断**：正式运行目标 JS 前先确认目标 JS 所在运行上下文不暴露 `process/Buffer/require/module/global`；推荐使用 `vm`、独立 Node 进程或显式隔离全局对象，但不强制所有补环境行为只能在 `vm` 上下文中进行，并执行六项纯计算预检或说明跳过原因。
+22. **Node 泄露先阻断**：正式运行目标 JS 前先确认目标 JS 所在运行上下文不暴露 `process/Buffer/require/module/exports/global/__dirname/__filename/setImmediate/clearImmediate` 等 Node 能力，也不得直接复用宿主 Node Web API 兼容层。按 Node 官方文档，`navigator` 是 Node 21+ 全局对象，不是 Node 20 官方新增；检测到宿主 `navigator` 时必须先删除或隔离，再安装浏览器式 `Navigator`；`navigator.userAgent` 不得为 `Node.js/<major>`，不得暴露 Node 来源的 `navigator.locks`。检测到 Node 22.4+ 宿主 `localStorage/sessionStorage`、宿主 `performance.nodeTiming/eventLoopUtilization/timerify/markResourceTiming`、宿主 `fetch/WebSocket/BroadcastChannel/MessageChannel` 时，必须删除、隔离或用浏览器样本覆盖。`URL/TextEncoder/Streams/Events/crypto/WebAssembly/queueMicrotask` 等浏览器同名 API 如果参与检测，也必须按浏览器样本或可控实现安装，不能盲目透传 Node 宿主构造器。推荐使用 `vm`、独立 Node 进程或显式隔离全局对象，但不强制所有补环境行为只能在 `vm` 上下文中进行，并执行六项纯计算预检或说明跳过原因。
 
 23. **补环境初始化即 addon-first**：进入 Node.js 补环境阶段的第一步就必须运行 `scripts/load_native_addon.js --json` 或在 env 初始化代码中等价加载 / 记录 addon 可用性；不要等检测到 `toString`、属性描述符、原型链或 `document.all` 问题后才考虑 addon。创建 native-like 函数、构造函数、getter、setter、实例对象、`document.all`、`createNativeObject` / `createProtoChains` 支持的对象时，addon 可用必须优先使用 addon API；只有用户明确要求不使用 addon、addon 缺失、ABI 不兼容或调用失败时，才降级为 `NativeProtect` / JS fallback，并把豁免或降级原因写入 notes、阶段输出和最终总结。
 
@@ -336,7 +336,7 @@ node scripts/run_with_trace.js --target case/js/original/app.js --entry window.m
 
 
 
-用于探测模式：默认可在受控 `vm` 上下文中运行目标 JS，也可按 case 需要使用独立 Node 进程或显式隔离的目标运行上下文；关键要求是不把宿主 `process/Buffer/require/module/global` 暴露给目标 JS，并记录环境访问、函数调用、构造调用和运行错误。
+用于探测模式：默认可在受控 `vm` 上下文中运行目标 JS，也可按 case 需要使用独立 Node 进程或显式隔离的目标运行上下文；关键要求是不把宿主 `process/Buffer/require/module/global` 暴露给目标 JS，也不透传宿主 `navigator`、`performance`、`localStorage/sessionStorage`、`fetch/WebSocket` 等 Node Web API 兼容层，并记录环境访问、函数调用、构造调用和运行错误。
 
 
 
@@ -442,6 +442,7 @@ node scripts/check_fingerprint_fixture.js --fixture case/fixtures/fingerprint.fi
 ```bash
 
 node scripts/check_node_leakage.js --markdown
+node scripts/check_node_leakage.js --json
 
 node scripts/precheck_runtime.js --markdown
 
@@ -622,7 +623,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 11. 如用户选择 RuyiTrace，先导入 NDJSON 日志、输出环境访问摘要，并把相关 `api` / `stack.file` / `line` / `col` 作为后续补环境优先依据。
 
-12. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
+12. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon；Node 泄露阻断必须覆盖基础 Node 能力和 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ Storage、Node `performance`、宿主网络 / 消息 Web API 兼容层，以及 `URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
 
 13. 输出补环境前置分析结论。
 
@@ -666,6 +667,8 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 进入 Node.js 补环境阶段前的用户确认。
 
+- Node 泄露阻断结果：基础 Node 能力变量、宿主 `navigator`、宿主 Storage、Node `performance` 专属字段、宿主网络 / 消息 Web API、`URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现是否已删除、隔离或覆盖。
+
 - 阶段报告写入状态：至少 `case/阶段报告/01-需求信息确认.md`，并按实际进度和合适推进节点生成后续中文命名阶段报告，记录当前能力增量、测试和清理结果。
 
 
@@ -679,6 +682,8 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 - 目标 JS 加载方式与入口函数。
 
 - 探测模式 trace 摘要。
+
+- Node 泄露自检摘要：`process/Buffer/require/module/global` 为 `undefined`，`navigator.userAgent` 非 `Node.js/<major>`，`performance.nodeTiming/eventLoopUtilization/timerify` 不存在，Storage 与网络 API 不复用宿主实现。
 
 - 如果选择 ruyiPage + RuyiTrace：先给出 NDJSON 证据摘要和长字段截断风险，再说明 Node trace / Proxy 只是补充验证。
 

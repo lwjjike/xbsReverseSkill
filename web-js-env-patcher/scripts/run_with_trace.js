@@ -31,7 +31,7 @@ function usage() {
   return `用法：
   node scripts/run_with_trace.js --target case/js/original/app.js --entry window.makeSign --fixture case/fixtures/sample.fixture.json --trace case/tmp/env-trace.jsonl --summary case/tmp/missing-env.json --output case/tmp/node-output.json
 
-说明：该脚本用于探测模式。默认在 vm 探测上下文内定义浏览器桩函数，避免把宿主 require/process/Buffer 暴露给目标 JS；正式交付不强制只能使用 vm。`;
+说明：该脚本用于探测模式。默认在 vm 探测上下文内定义浏览器桩函数，避免把宿主 require/process/Buffer 以及 Node 自带 navigator/performance/localStorage 等 Web API 兼容层暴露给目标 JS；正式交付不强制只能使用 vm。`;
 }
 
 function readJson(p) { return p ? JSON.parse(fs.readFileSync(p, 'utf8').replace(/^\uFEFF/, '')) : {}; }
@@ -304,14 +304,55 @@ Object.defineProperty(globalThis, '__callEntry', { value: function(entry, argsJs
 Object.defineProperty(globalThis, '__dumpEvents', { value: function() { return JSON.stringify(__events); }, enumerable: false, configurable: true });
 Object.defineProperty(globalThis, '__leakageCheck', { value: function() {
   let functionProcess = 'error';
+  let objectCtorProcess = 'error';
+  let arrayCtorProcess = 'error';
   try { functionProcess = Function('return typeof process')(); } catch (err) { functionProcess = 'error:' + err.message; }
+  try { objectCtorProcess = ({}).constructor.constructor('return typeof process')(); } catch (err) { objectCtorProcess = 'error:' + err.message; }
+  try { arrayCtorProcess = ([]).constructor.constructor('return typeof process')(); } catch (err) { arrayCtorProcess = 'error:' + err.message; }
+  const navUserAgent = typeof navigator !== 'undefined' && navigator ? String(navigator.userAgent || '') : 'undefined';
+  const perfHas = function(name) { try { return typeof performance !== 'undefined' && performance ? (name in performance) : false; } catch (_) { return false; } };
   return JSON.stringify({
     process: typeof process,
     Buffer: typeof Buffer,
     require: typeof require,
     module: typeof module,
+    exports: typeof exports,
     global: typeof global,
+    setImmediate: typeof setImmediate,
+    clearImmediate: typeof clearImmediate,
     functionProcess,
+    objectCtorProcess,
+    arrayCtorProcess,
+    navigator: typeof navigator,
+    navigatorUserAgent: navUserAgent,
+    navigatorIsNodeUserAgent: /^Node\\.js\\//.test(navUserAgent),
+    navigatorLocks: typeof navigator !== 'undefined' && navigator ? typeof navigator.locks : 'undefined',
+    performance: typeof performance,
+    performanceNodeTiming: perfHas('nodeTiming') ? 'present' : 'absent',
+    performanceEventLoopUtilization: perfHas('eventLoopUtilization') ? 'present' : 'absent',
+    performanceTimerify: perfHas('timerify') ? 'present' : 'absent',
+    performanceMarkResourceTiming: perfHas('markResourceTiming') ? 'present' : 'absent',
+    localStorage: typeof localStorage,
+    localStorageConstructor: typeof localStorage !== 'undefined' && localStorage && localStorage.constructor ? localStorage.constructor.name : 'undefined',
+    sessionStorage: typeof sessionStorage,
+    sessionStorageConstructor: typeof sessionStorage !== 'undefined' && sessionStorage && sessionStorage.constructor ? sessionStorage.constructor.name : 'undefined',
+    fetch: typeof fetch,
+    webSocket: typeof WebSocket,
+    broadcastChannel: typeof BroadcastChannel,
+    messageChannel: typeof MessageChannel,
+    crypto: typeof crypto,
+    cryptoConstructor: typeof crypto !== 'undefined' && crypto && crypto.constructor ? crypto.constructor.name : 'undefined',
+    subtleCrypto: typeof crypto !== 'undefined' && crypto && crypto.subtle ? typeof crypto.subtle : 'undefined',
+    URL: typeof URL,
+    URLConstructor: typeof URL !== 'undefined' && URL ? URL.name : 'undefined',
+    URLSearchParams: typeof URLSearchParams,
+    TextEncoder: typeof TextEncoder,
+    TextDecoder: typeof TextDecoder,
+    ReadableStream: typeof ReadableStream,
+    EventTarget: typeof EventTarget,
+    AbortController: typeof AbortController,
+    WebAssembly: typeof WebAssembly,
+    queueMicrotask: typeof queueMicrotask,
   });
 }, enumerable: false, configurable: true });
 `;
