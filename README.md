@@ -2,6 +2,9 @@
 
 这是一个面向 Web/JS 逆向分析的 skill 仓库，当前主要包含 3 个方向的能力模块，分别覆盖 AST 反混淆、纯算/协议逆向，以及浏览器补环境。
 
+## 注意
+使用最新web-js-env-patcher补环境skill，使用前关闭其他3个skill防止冲突
+
 ## 使用
 1. codex安装
 将ast-deobfuscation、web-reverse-algorithm和web-reverse-env三个文件夹复制到`C:\Users\用户名\.codex\skills`目录下即可使用
@@ -71,7 +74,7 @@ curl 'https://hk.trip.com/hotels/list?city=30&provinceId=0&countryId=1&checkIn=2
 面向 Web/JS 逆向中的纯算与协议分析场景。
 主要用于复杂 header/cookie 签名、混合加密、JSVMP/VMP、Wasm、PoW、响应解密、验证码参数还原、challenge/verify 流程分析，以及从最终请求或最终输出反推 writer、builder、entry、source 的完整链路。适合将逆向结果进一步沉淀为 solver、SDK、脚本或服务。
 
-### web-reverse-env
+### web-reverse-env(已废弃)
 
 面向浏览器补环境与运行时修补场景。
 覆盖 Proxy 吐环境、原型链修复、native `toString` 保护、描述符保护，以及 `navigator`、`document`、`storage`、`canvas`、`WebGL`、`crypto`、`performance`、`WebRTC`、`Worker` 等模块化环境构建。适合处理浏览器环境缺失、反检测、指纹对齐和高强度风控环境修补问题。
