@@ -162,6 +162,14 @@ const CONSTRUCTORS = [
   'WebGLRenderingContext',
   'WebGL2RenderingContext',
   'CSSStyleDeclaration',
+  'HTMLCollection',
+  'NodeList',
+  'PluginArray',
+  'MimeTypeArray',
+  'Plugin',
+  'MimeType',
+  'DOMTokenList',
+  'StyleSheetList',
 ];
 
 const OBJECT_LITERAL_TARGETS = [
@@ -215,6 +223,8 @@ const WEBAPI_METHODS = [
   'setRequestHeader',
   'getResponseHeader',
   'getAllResponseHeaders',
+  'item',
+  'namedItem',
 ];
 
 const HOST_REUSE = [
@@ -240,7 +250,16 @@ const HOST_REUSE = [
   'FormData',
 ];
 
-const HELPER_EVIDENCE = /(?:createNativeFunction|createNativeConstructor|createGetter|createSetter|createNativeGetter|createNativeSetter|defineNativeGetter|defineNativeSetter|defineNativeAccessor|createProtoChains|createNativeObject|createUndetectable|nativeApi|addon\.)\s*\(/;
+const COLLECTION_CONSTRUCTORS = [
+  'HTMLCollection',
+  'NodeList',
+  'PluginArray',
+  'MimeTypeArray',
+  'DOMTokenList',
+  'StyleSheetList',
+];
+
+const HELPER_EVIDENCE = /(?:createNativeFunction|createNativeConstructor|createGetter|createSetter|createNativeGetter|createNativeSetter|defineNativeGetter|defineNativeSetter|defineNativeAccessor|createProtoChains|createNativeObject|createNativeCollection|getMimeTypesAndPlugins|createInterceptor|createUndetectable|setPrivate|getPrivate|hasPrivate|deletePrivate|nativeApi|addon\.|xbs\.|window\.xbs\.|globalThis\.xbs\.)\s*\(/;
 
 function scanMatches(text, pattern, onMatch) {
   pattern.lastIndex = 0;
@@ -325,6 +344,63 @@ function inspectFile(root, filePath) {
         'webapi-instance-plain-object',
         `${name} 被直接赋值为普通对象，缺少浏览器原型链、实例 toString、descriptor 和 addon-first 证据。`,
         `为 ${name} 建立对应构造函数和 prototype，例如 Screen / IDBFactory / CSS 等；使用 createProtoChains 创建实例，再用 defineProperty 安装属性和 native-like 方法。`,
+        lineText(text, line)
+      );
+    });
+  }
+
+  const pluginMimeInstall = /\b(?:plugins|mimeTypes)\b/;
+  const installsNavigatorPluginMime = /Object\s*\.\s*defineProperty\s*\(\s*(?:navigator|Navigator\s*\.\s*prototype)[\s\S]{0,260}['"](?:plugins|mimeTypes)['"]|(?:navigator|Navigator\s*\.\s*prototype)\s*\.\s*(?:plugins|mimeTypes)\s*=/.test(text);
+  const hasMimePluginAddon = /\b(?:getMimeTypesAndPlugins|addon\s*\.\s*getMimeTypesAndPlugins|nativeApi\s*\.\s*getMimeTypesAndPlugins|xbs\s*\.\s*getMimeTypesAndPlugins|window\s*\.\s*xbs\s*\.\s*getMimeTypesAndPlugins|globalThis\s*\.\s*xbs\s*\.\s*getMimeTypesAndPlugins)\s*\(/.test(text);
+  if (pluginMimeInstall && installsNavigatorPluginMime && !hasMimePluginAddon) {
+    const index = text.search(/(?:plugins|mimeTypes)/);
+    const line = lineOf(text, index >= 0 ? index : 0);
+    addIssue(
+      issues,
+      'error',
+      relative,
+      line,
+      'navigator-plugins-mimetypes-without-addon',
+      '发现 navigator.plugins / navigator.mimeTypes 安装逻辑，但未发现 getMimeTypesAndPlugins addon-first 证据。',
+      'addon.node 或 xbs isolated-vm 可用时必须优先使用 addon.getMimeTypesAndPlugins(config) / xbs.getMimeTypesAndPlugins(config) 或 addon-first helper；真实浏览器插件数据不同则传入 config。只有 native 能力不可用或用户明确禁用时才允许 JS fallback，并记录原因。',
+      lineText(text, line)
+    );
+  }
+
+  const pluginMimePlainArray = /(?:plugins|mimeTypes)\s*[:=]\s*\[\s*\]/g;
+  scanMatches(text, pluginMimePlainArray, match => {
+    const nearby = text.slice(Math.max(0, match.index - 240), Math.min(text.length, match.index + 240));
+    if (/fallback|降级|addon 不可用|addon不可用|getMimeTypesAndPlugins/.test(nearby)) return;
+    const line = lineOf(text, match.index);
+    addIssue(
+      issues,
+      'error',
+      relative,
+      line,
+      'navigator-plugins-mimetypes-plain-array',
+      'plugins / mimeTypes 被实现为普通数组，缺少 PluginArray / MimeTypeArray 原型、item / namedItem、索引访问和 native-like 行为。',
+      '使用 addon.getMimeTypesAndPlugins(config) 或 xbs.getMimeTypesAndPlugins(config)；native 能力不可用时至少通过 createNativeCollection fallback 并记录差异。',
+      lineText(text, line)
+    );
+  });
+
+  for (const name of COLLECTION_CONSTRUCTORS) {
+    const mentionsCollection = new RegExp(`\\b${name}\\b`).test(text);
+    if (!mentionsCollection) continue;
+    const fromMimePluginApi = ['PluginArray', 'MimeTypeArray', 'Plugin', 'MimeType'].includes(name) && /getMimeTypesAndPlugins\s*\(/.test(text);
+    const hasCollectionAddon = new RegExp(`createNativeCollection\\s*\\([\\s\\S]{0,800}name\\s*:\\s*['"]${name}['"]`).test(text) || fromMimePluginApi;
+    const plainCollection = new RegExp(`(?:class\\s+${name}\\b|function\\s+${name}\\s*\\(|${targetExpr(name)}\\s*=\\s*(?:function|class|\\{)|\\b${name}\\s*=\\s*\\[)`, 'g');
+    scanMatches(text, plainCollection, match => {
+      if (hasCollectionAddon) return;
+      const line = lineOf(text, match.index);
+      addIssue(
+        issues,
+        'error',
+        relative,
+        line,
+        'webapi-collection-without-createNativeCollection',
+        `${name} 使用普通 JS 结构实现，未体现 createNativeCollection / getMimeTypesAndPlugins addon-first。`,
+        `浏览器集合对象 ${name} 应优先使用 addon.createNativeCollection({ name: '${name}', ... })；PluginArray / MimeTypeArray 应优先由 addon.getMimeTypesAndPlugins(config) 返回。`,
         lineText(text, line)
       );
     });
@@ -537,7 +613,7 @@ function inspectFile(root, filePath) {
   });
 
   const hasPlainWebApiPattern = issues.some(issue => issue.file === relative);
-  const usesAnyNativeHelper = /createNativeFunction|createGetter|createSetter|createProtoChains|createUndetectable|loadNativeAddon|WEB_JS_ENV_PATCHER_ADDON|addon\.node/.test(text);
+  const usesAnyNativeHelper = /createNativeFunction|createGetter|createSetter|createProtoChains|createNativeCollection|getMimeTypesAndPlugins|createInterceptor|createUndetectable|setPrivate|getPrivate|hasPrivate|deletePrivate|loadNativeAddon|WEB_JS_ENV_PATCHER_ADDON|WEB_JS_ENV_PATCHER_XBS_ISOLATED_VM|addon\.node|isolated_vm\.node|xbs-isolated-vm|xbs\.|window\.xbs|globalThis\.xbs/.test(text);
   if (hasPlainWebApiPattern && !usesAnyNativeHelper) {
     addIssue(
       warnings,
@@ -612,8 +688,8 @@ function renderMarkdown(result) {
   lines.push('## 交付门禁说明');
   lines.push('');
   lines.push('- 该检查失败时不得交付最终补环境项目。');
-  lines.push('- 修复方向不是“删除检查”，而是把 WebAPI 构造函数、普通方法、getter、setter、实例对象和特殊对象统一迁移到 addon-first helper。');
-  lines.push('- addon 不可用时才允许 NativeProtect / JS fallback，并必须在阶段报告与最终总结中记录原因。');
+  lines.push('- 修复方向不是“删除检查”，而是把 WebAPI 构造函数、普通方法、getter、setter、实例对象、集合对象、plugins/mimeTypes 和特殊对象统一迁移到 addon-first helper。');
+  lines.push('- addon.node / xbs native API 不可用时才允许 NativeProtect / JS fallback，并必须在阶段报告与最终总结中记录原因。');
   return lines.join('\n');
 }
 

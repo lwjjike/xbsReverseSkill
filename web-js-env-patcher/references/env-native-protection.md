@@ -2,17 +2,19 @@
 
 每次进入 Node.js 补环境阶段、准备编写 env 模块、或修改任何 WebAPI 对象模型时读取本文件。真实性保护不是等目标 JS 检测到再补，而是补环境默认基线；除非用户明确要求不做保护或不使用 addon，否则必须从补环境初始化开始执行。
 
-新版 addon API 的详细调用方式见 `references/addon-api.md`。进入补环境阶段、修改 addon helper、创建构造函数 / 原型链 / `document.all` / `navigator.plugins` 时必须同时读取该文件。
+新版 addon API 的详细调用方式见 `references/addon-api.md`。进入补环境阶段、修改 addon helper、创建构造函数 / 原型链 / 集合对象 / `document.all` / `navigator.plugins` / `navigator.mimeTypes` 时必须同时读取该文件。
+
+如果用户明确选择 `isolated-vm` 补环境框架，则必须同时读取 `references/runtime-frameworks.md` 与 `references/xbs-isolated-vm-api.md`。该模式下不要把旧 `addon.node` 桥接进 isolated-vm；补环境代码运行在 isolated-vm Context 内，addon-first 应体现为 `window.xbs` / `globalThis.xbs` native-first。`xbs.createProtoChains`、`xbs.createNativeFunction`、`xbs.createGetter`、`xbs.createSetter`、`xbs.createNativeCollection`、`xbs.getMimeTypesAndPlugins`、`xbs.createUndetectable` 等 API 与 addon-first 同等作为优先主路径。
 
 ## 补环境初始化硬性基线（不等待检测）
 
 进入补环境阶段后，先执行以下基线，再运行目标 JS：
 
-1. 先加载 / 检测随包 `addon.node`：运行 `scripts/load_native_addon.js --json`，或在最终 env 初始化中调用 `loadNativeAddon()` / 等价逻辑，并记录 available、path、exports、失败原因。
+1. 先加载 / 检测 native 能力：普通 Node runtime 运行 `scripts/load_native_addon.js --json` 或等价加载随包 `addon.node`；如果用户选择 `isolated-vm`，运行 `scripts/check_xbs_isolated_vm.js --markdown` 并在 Context 内自检 `window.xbs`。记录 available、path、exports / API、Node ABI、平台和失败原因。
 2. 从第一版 env 骨架开始就使用 `assets/env-modules/native-protect.js` 或等价 addon-first helper；不要先用普通函数 / 普通赋值跑通，等检测到 `toString`、descriptor、原型链问题后再补保护。
 3. 所有新增 WebAPI 默认使用 `Object.defineProperty` / `defineProperties`，并显式设置 `writable`、`enumerable`、`configurable`。
 4. 所有方法、构造函数、getter、setter、实例对象都默认做 native-like / toString / `Symbol.toStringTag` / 原型链保护。
-5. addon 可用时必须优先调用 addon API；只有用户明确要求不使用 addon、addon 缺失、ABI 不兼容或 API 调用失败时，才允许 `NativeProtect` / JS fallback，并记录豁免或降级原因。
+5. native 能力可用时必须优先调用 addon API 或 xbs API；只有用户明确要求不使用 native 能力、addon / xbs 缺失、ABI 不兼容或 API 调用失败时，才允许 `NativeProtect` / JS fallback，并记录豁免或降级原因。
 
 该基线是规范性要求，不以“目标是否已经检测到”为触发条件。
 
@@ -55,8 +57,10 @@ obj.constructor.name
 4. **函数 toString 保护**：普通方法、构造函数、原型方法在 addon 可用时必须先用 `createNativeFunction`；addon 不可用或调用失败时才用 `NativeProtect.setNativeFunc` fallback。
 5. **访问器 toString 保护**：getter / setter 本身也是函数；addon 可用时必须先用 `createGetter` / `createSetter`，失败时才用 `NativeProtect.setNativeFunc(getter, "get xxx")` / `setNativeFunc(setter, "set xxx")` fallback。
 6. **实例对象 toString 保护**：对 `navigator`、`document`、`localStorage`、`screen`、`location` 等实例，优先用 addon 构造函数 / `createProtoChains` 实例工厂创建真实对象和原型链；addon 创建出的实例通常已经具备正确的 `Object.prototype.toString` 行为，不要再叠加 `markObjectType`、`markObjectToString` 或手写 `Symbol.toStringTag` 伪装。只有 addon 不可用、必须创建普通 JS fallback 对象时，才使用 `Symbol.toStringTag`、`NativeProtect.setObjFunc(obj, "Navigator")` / `markObjectToString`，并记录 fallback 原因。
-7. **特殊对象**：`document.all` 这类 HTMLDDA / 不可检测对象必须优先使用 addon `createUndetectable`；JS fallback 只能标记为近似，不得声称完全一致。
-8. **指纹终端 API**：Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API 必须优先回放真实浏览器采样值，同时保持 API 所在对象的原型链、描述符和 native-like `toString`；不得因为 Node.js 无法真实渲染就把最终流程改成自动化。
+7. **集合对象**：`HTMLCollection`、`NodeList`、`PluginArray`、`MimeTypeArray`、`DOMTokenList` 等集合对象必须优先用 addon `createNativeCollection` 或 `getMimeTypesAndPlugins`，不得以普通数组 / 普通对象作为主路径。
+8. **plugins / mimeTypes**：`navigator.plugins` 和 `navigator.mimeTypes` 必须优先使用 addon `getMimeTypesAndPlugins(config)`；真实浏览器插件数据不同则传入 config 生成一致数据，不能手写 `[]` 或普通对象作为主路径。
+9. **特殊对象**：`document.all` 这类 HTMLDDA / 不可检测对象必须优先使用 addon `createUndetectable`；JS fallback 只能标记为近似，不得声称完全一致。
+10. **指纹终端 API**：Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API 必须优先回放真实浏览器采样值，同时保持 API 所在对象的原型链、描述符和 native-like `toString`；不得因为 Node.js 无法真实渲染就把最终流程改成自动化。
 
 建议交付前运行：
 
@@ -79,25 +83,26 @@ node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl
 
 推荐优先级：
 
-1. 可选 native addon 创建 native-like 函数、getter、setter。
+1. 可选 native addon 或 xbs isolated-vm 创建 native-like 函数、getter、setter。
 2. JS 层真实对象 + 描述符 + 原型链。
 3. `NativeProtect` 作为 addon 不可用时的 fallback；必须同时覆盖普通函数、访问器 getter / setter 和实例对象 `Object.prototype.toString`。
 4. 现有能力无法覆盖时，再考虑新增 C++ addon API。
 
 ## addon-first 门禁
 
-进入补环境阶段第一步必须先检测 addon；交付前还要复查 addon-first 证据：
+进入补环境阶段第一步必须先检测 native 能力；普通 Node runtime 检测 addon，选择 isolated-vm 时检测 xbs isolated-vm；交付前还要复查 addon-first / xbs native-first 证据：
 
 ```bash
 node scripts/load_native_addon.js --json
+node scripts/check_xbs_isolated_vm.js --markdown   # 仅用户选择 isolated-vm 时必跑
 ```
 
 实现规则：
 
 1. `load_native_addon.js` 返回 `{ available, addon, path, exports }`；env helper 必须同时兼容 raw addon 和这个包装对象，不能因为传入 `{ addon }` 而静默跳过 addon。
-2. 创建函数、构造函数、getter、setter、`document.all`、`createNativeObject` / `createProtoChains` 支持的对象时，先调用 addon API。
+2. 创建函数、构造函数、getter、setter、集合对象、`navigator.plugins` / `mimeTypes`、`document.all`、`createNativeObject` / `createProtoChains` 支持的对象时，先调用 addon API；如果选择 xbs isolated-vm，则先调用 Context 内的 `xbs` API。
 3. 只有用户明确要求不使用 addon、addon 不可用、ABI 不兼容或 API 抛错时，才降级到 `NativeProtect` / JS fallback，并在 `notes`、阶段输出和最终总结中记录豁免或降级原因。
-4. 交付前运行 `check_env_realism.js --case-dir case --markdown`；该脚本默认强制 addon-first。如果源码只出现 `NativeProtect` / `markNativeFunction`，却没有 addon API、`options.addon` 或加载记录，应视为失败。只有用户明确要求不使用 addon 时，才可传入 `--no-require-addon-first` 并记录原因。
+4. 交付前运行 `check_env_realism.js --case-dir case --markdown`；该脚本默认强制 addon-first / xbs native-first。如果源码只出现 `NativeProtect` / `markNativeFunction`，却没有 addon API、`window.xbs` / `globalThis.xbs`、`options.addon` / `options.xbs` 或加载记录，应视为失败。只有用户明确要求不使用 native 能力时，才可传入 `--no-require-addon-first` 并记录原因。
 
 ## 构造函数报错必须与浏览器一致
 
@@ -153,12 +158,18 @@ function collectConstructorError(name) {
 已知可用 API：
 
 ```js
-hello
 createNativeObject
 createNativeFunction
 createProtoChains
+getProtoChainRegistry
+deleteProtoChainRegistryEntry
+clearProtoChainRegistry
 getPrivate
 setPrivate
+hasPrivate
+deletePrivate
+createInterceptor
+createNativeCollection
 getMimeTypesAndPlugins
 createGetter
 createSetter
@@ -172,6 +183,8 @@ throwTypeError
 - `createNativeObject(options)` 仅作为旧式单对象兼容；不要把 `createNativeObject(tag, proto, properties)` 写入新代码主路径。
 - 发现旧式 `createProtoChains(name, chain)` 时要迁移为 descriptors 数组；兼容层只能记录 fallback，不能把旧式形态继续作为 addon 主调用。
 - `createUndetectable(callback, handlers)` 支持 `getter`、`setter`、`query`、`deleter`、`enumerator`、`definer`、`descriptor` 等 handlers；处理 `document.all` 时优先使用。
+- `createProtoChains` 支持 `constructorBehavior`、`callBehavior`、`constructorErrorMessage`、`callErrorMessage`、`illegalConstructor`、`prototypeMethods`、`staticMethods`、`internalClassName`、`aliases`、`aliasOf`、`instanceFactoryName`、`instanceInitializer`；应一次性规划对象模型，减少后续反复改注册表。
+- `getMimeTypesAndPlugins([config])` 是 `navigator.plugins` / `navigator.mimeTypes` 主路径；`createNativeCollection(options)` 是通用集合对象主路径。
 
 检查方式：
 
@@ -190,8 +203,11 @@ node scripts/load_native_addon.js --addon <path-to-addon.node> --json
 | native-like setter | `createSetter` |
 | 构造函数、实例、别名和实例工厂 | `createProtoChains(descriptors)` |
 | 旧式单对象兼容 | `createNativeObject(options)` |
-| `navigator.plugins` / `navigator.mimeTypes` | `getMimeTypesAndPlugins` |
-| 内部私有状态 | `setPrivate` / `getPrivate` |
+| `navigator.plugins` / `navigator.mimeTypes` | `getMimeTypesAndPlugins(config)` |
+| `HTMLCollection` / `NodeList` / 类数组集合 | `createNativeCollection(options)` |
+| named / indexed property interceptor | `createInterceptor(options)` |
+| 内部私有状态 | `setPrivate` / `getPrivate` / `hasPrivate` / `deletePrivate` |
+| 注册表查看与测试隔离 | `getProtoChainRegistry` / `deleteProtoChainRegistryEntry` / `clearProtoChainRegistry` |
 | 浏览器式 TypeError | `throwTypeError` |
 
 ## `document.all`
@@ -382,3 +398,4 @@ navigator.constructor.name
   1. 换回用户真实浏览器手动取证。
   2. 提供 HAR / cURL / JS 文件离线分析。
   3. 在授权环境中更换合规网络环境。
+

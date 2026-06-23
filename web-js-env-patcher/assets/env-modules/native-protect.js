@@ -1,5 +1,5 @@
 // addon-first native-like 保护工具。
-// 1) 创建函数、getter、setter、document.all、构造函数和原型链时，优先尝试 addon API。
+// 1) 创建函数、getter、setter、document.all、构造函数、原型链、集合对象和插件列表时，优先尝试 addon API。
 // 2) addon.node 缺失、ABI 不兼容或调用失败时，才降级到 NativeProtect / JS fallback。
 // 3) 本模块自动尝试加载随 Skill 携带的 addon.node，并记录 usedApis / fallbacks，便于写入 notes 和最终总结。
 // 注意：复制到 case/result 时不要写死本机绝对路径，优先使用相对 assets/native-addon 或 WEB_JS_ENV_PATCHER_ADDON。
@@ -210,6 +210,19 @@ function getAddonApi(addonLike, apiName) {
   return null;
 }
 
+function isAddonLike(value) {
+  return !!(
+    value &&
+    (typeof value === 'object' || typeof value === 'function') &&
+    (
+      typeof value.createNativeFunction === 'function' ||
+      typeof value.createProtoChains === 'function' ||
+      typeof value.getMimeTypesAndPlugins === 'function' ||
+      Object.prototype.hasOwnProperty.call(value, 'addon')
+    )
+  );
+}
+
 function recordAddonUse(apiName) {
   if (!nativeAddonUsage.usedApis.includes(apiName)) nativeAddonUsage.usedApis.push(apiName);
 }
@@ -341,6 +354,9 @@ function splitAddonAndHandlers(second, third) {
   } else if (second && typeof second === 'object' && [...UNDETECTABLE_HANDLER_NAMES].some(k => typeof second[k] === 'function')) {
     handlers = second;
     addon = third || null;
+  } else if (second && typeof second === 'object' && isAddonLike(third)) {
+    handlers = second;
+    addon = third;
   } else {
     addon = second || null;
     handlers = third || null;
@@ -363,6 +379,68 @@ function createUndetectable(impl, addonOrHandlers, maybeHandlers) {
     recordAddonFallback('createUndetectable', 'addon 不可用，document.all 只能使用近似 fallback');
   }
   return undefined;
+}
+
+function createInterceptor(options = {}, addon) {
+  const api = getAddonApi(addon || options.addon, 'createInterceptor');
+  if (api) {
+    try {
+      const value = api(options);
+      recordAddonUse('createInterceptor');
+      return value;
+    } catch (err) {
+      recordAddonFallback('createInterceptor', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('createInterceptor', 'addon 不可用，使用 Proxy 近似 fallback');
+  }
+
+  const target = options.target && typeof options.target === 'object' ? options.target : {};
+  const handlers = options.handlers || {};
+  const proxy = new Proxy(target, {
+    get(obj, property, receiver) {
+      if (typeof handlers.getter === 'function') {
+        const got = handlers.getter(obj, property);
+        if (!got || got.intercept !== false) return got && Object.prototype.hasOwnProperty.call(got, 'value') ? got.value : got;
+      }
+      return Reflect.get(obj, property, receiver);
+    },
+    set(obj, property, value, receiver) {
+      if (typeof handlers.setter === 'function') {
+        const got = handlers.setter(obj, property, value);
+        if (got && got.intercept === true) return Reflect.set(obj, property, got.value, receiver);
+        if (got && got.intercept === false) return Reflect.set(obj, property, value, receiver);
+      }
+      return Reflect.set(obj, property, value, receiver);
+    },
+    getOwnPropertyDescriptor(obj, property) {
+      if (typeof handlers.descriptor === 'function') {
+        const desc = handlers.descriptor(obj, property);
+        if (desc) return desc;
+      }
+      return Reflect.getOwnPropertyDescriptor(obj, property);
+    },
+    ownKeys(obj) {
+      if (typeof handlers.enumerator === 'function') {
+        const keys = handlers.enumerator(obj);
+        if (Array.isArray(keys)) return keys;
+      }
+      return Reflect.ownKeys(obj);
+    },
+    deleteProperty(obj, property) {
+      if (typeof handlers.deleter === 'function') return !!handlers.deleter(obj, property);
+      return Reflect.deleteProperty(obj, property);
+    },
+    defineProperty(obj, property, descriptor) {
+      if (typeof handlers.definer === 'function') {
+        const got = handlers.definer(obj, property, descriptor);
+        if (got === false || (got && got.intercept === false)) return false;
+      }
+      return Reflect.defineProperty(obj, property, descriptor);
+    },
+  });
+  if (options.internalClassName) markObjectToString(proxy, options.internalClassName);
+  return proxy;
 }
 
 function isDescriptorObject(value) {
@@ -462,7 +540,17 @@ function createProtoChainsFallback(descriptors = []) {
 
     const name = desc.name;
     const Ctor = function (...args) {
-      return callConstructorForFallback(desc, this, new.target ? true : false, args);
+      const isNew = !!new.target;
+      const behavior = desc.illegalConstructor
+        ? 'throw'
+        : (isNew ? desc.constructorBehavior : desc.callBehavior) || 'allow';
+      if (behavior === 'illegal' || behavior === 'throw') {
+        const message = isNew
+          ? (desc.constructorErrorMessage || illegalConstructorMessage(name))
+          : (desc.callErrorMessage || 'Illegal constructor');
+        return throwBrowserTypeError(message, null);
+      }
+      return callConstructorForFallback(desc, this, isNew, args);
     };
     setFunctionMeta(Ctor, name, desc.length ?? 0);
     markNativeFunction(Ctor, name);
@@ -499,6 +587,34 @@ function createProtoChainsFallback(descriptors = []) {
       } catch {}
     }
 
+    for (const method of Array.isArray(desc.prototypeMethods) ? desc.prototypeMethods : []) {
+      if (!method || !method.name || typeof (method.callback || method.value) !== 'function') continue;
+      defineValue(
+        Ctor.prototype,
+        method.name,
+        createNativeFunction(method.name, method.length ?? 0, method.callback || method.value, null),
+        {
+          writable: method.writable ?? true,
+          enumerable: method.enumerable ?? true,
+          configurable: method.configurable ?? true,
+        }
+      );
+    }
+
+    for (const method of Array.isArray(desc.staticMethods) ? desc.staticMethods : []) {
+      if (!method || !method.name || typeof (method.callback || method.value) !== 'function') continue;
+      defineValue(
+        Ctor,
+        method.name,
+        createNativeFunction(method.name, method.length ?? 0, method.callback || method.value, null),
+        {
+          writable: method.writable ?? true,
+          enumerable: method.enumerable ?? true,
+          configurable: method.configurable ?? true,
+        }
+      );
+    }
+
     if (desc.readOnlyPrototypeProperty || desc.isReadOnlyPrototype) {
       try { Object.defineProperty(Ctor, 'prototype', { writable: false }); } catch {}
     }
@@ -521,7 +637,7 @@ function createProtoChainsFallback(descriptors = []) {
         if (desc.immutableInstancePrototype || desc.isImmutableInstanceProto) {
           try { Object.preventExtensions(instance); } catch {}
         }
-        markObjectToString(instance, desc.toStringTag || name);
+        markObjectToString(instance, desc.internalClassName || desc.toStringTag || name);
         return instance;
       };
       setFunctionMeta(factory, desc.instanceFactoryName, 0);
@@ -532,7 +648,7 @@ function createProtoChainsFallback(descriptors = []) {
     if (desc.isCreateInstance && desc.instanceName) {
       const instance = Object.create(Ctor.prototype);
       if (typeof desc.instanceInitializer === 'function') desc.instanceInitializer.call(instance);
-      markObjectToString(instance, desc.toStringTag || name);
+      markObjectToString(instance, desc.internalClassName || desc.toStringTag || name);
       result[desc.instanceName] = instance;
     }
   }
@@ -573,11 +689,149 @@ function createProtoChains(arg1, arg2, arg3) {
   return createProtoChainsFallback(descriptors);
 }
 
-function getMimeTypesAndPlugins(addon) {
+function getProtoChainRegistry(addon) {
+  const api = getAddonApi(addon, 'getProtoChainRegistry');
+  if (api) {
+    try {
+      const value = api();
+      recordAddonUse('getProtoChainRegistry');
+      return value;
+    } catch (err) {
+      recordAddonFallback('getProtoChainRegistry', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('getProtoChainRegistry', 'addon 不可用，无法读取 native 注册表');
+  }
+  return { constructors: [], aliases: {} };
+}
+
+function deleteProtoChainRegistryEntry(name, addon) {
+  const api = getAddonApi(addon, 'deleteProtoChainRegistryEntry');
+  if (api) {
+    try {
+      const ok = api(String(name));
+      recordAddonUse('deleteProtoChainRegistryEntry');
+      return ok;
+    } catch (err) {
+      recordAddonFallback('deleteProtoChainRegistryEntry', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('deleteProtoChainRegistryEntry', 'addon 不可用，无法删除 native 注册表项');
+  }
+  return false;
+}
+
+function clearProtoChainRegistry(addon) {
+  const api = getAddonApi(addon, 'clearProtoChainRegistry');
+  if (api) {
+    try {
+      const ok = api();
+      recordAddonUse('clearProtoChainRegistry');
+      return ok;
+    } catch (err) {
+      recordAddonFallback('clearProtoChainRegistry', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('clearProtoChainRegistry', 'addon 不可用，无法清空 native 注册表');
+  }
+  return false;
+}
+
+function normalizeCollectionItems(items) {
+  if (!Array.isArray(items)) return [];
+  return items.map((item, index) => {
+    if (item && typeof item === 'object' && Object.prototype.hasOwnProperty.call(item, 'value')) {
+      return { name: item.name == null ? '' : String(item.name), value: item.value };
+    }
+    return { name: item && item.name ? String(item.name) : String(index), value: item };
+  });
+}
+
+function createNativeCollection(options = {}, addon) {
+  const api = getAddonApi(addon || options.addon, 'createNativeCollection');
+  if (api) {
+    try {
+      const value = api(options);
+      recordAddonUse('createNativeCollection');
+      return value;
+    } catch (err) {
+      recordAddonFallback('createNativeCollection', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('createNativeCollection', 'addon 不可用，使用最小集合 JS fallback');
+  }
+
+  const name = options.name || 'NativeCollection';
+  const Ctor = createNativeConstructor(name, 0, function () {
+    throwTypeError(`Failed to construct '${name}': Illegal constructor`, null);
+  }, null);
+  const collection = Object.create(Ctor.prototype);
+  const items = normalizeCollectionItems(options.items);
+  const values = items.map(item => item.value);
+
+  defineValue(collection, 'length', values.length, { writable: false, enumerable: false, configurable: true });
+  if (options.indexedAccess !== false) {
+    values.forEach((value, index) => {
+      defineValue(collection, String(index), value, { writable: false, enumerable: true, configurable: true });
+    });
+  }
+  if (options.namedAccess !== false) {
+    for (const item of items) {
+      if (!item.name) continue;
+      defineValue(collection, item.name, item.value, {
+        writable: false,
+        enumerable: !!options.namedEnumerable,
+        configurable: true,
+      });
+    }
+  }
+  if (options.itemMethod !== false) {
+    defineValue(Ctor.prototype, 'item', createNativeFunction('item', 1, function (index) {
+      const n = Number(index);
+      return Number.isInteger(n) && n >= 0 ? (this[String(n)] || null) : null;
+    }, null), { writable: true, enumerable: false, configurable: true });
+  }
+  if (options.namedItemMethod !== false) {
+    defineValue(Ctor.prototype, 'namedItem', createNativeFunction('namedItem', 1, function (key) {
+      return this[String(key)] || null;
+    }, null), { writable: true, enumerable: false, configurable: true });
+  }
+  if (options.iterable !== false) {
+    defineValue(Ctor.prototype, Symbol.iterator, createNativeFunction('values', 0, function () {
+      return values[Symbol.iterator]();
+    }, null), { writable: true, enumerable: false, configurable: true });
+  }
+  if (options.hasToStringTag !== false) {
+    try {
+      Object.defineProperty(Ctor.prototype, Symbol.toStringTag, {
+        value: options.toStringTag || name,
+        writable: false,
+        enumerable: false,
+        configurable: true,
+      });
+    } catch {}
+  }
+  markObjectToString(collection, options.internalClassName || options.toStringTag || name);
+  if (options.immutableInstancePrototype) {
+    try { Object.preventExtensions(collection); } catch {}
+  }
+  return { collection, constructor: Ctor, [name]: Ctor };
+}
+
+function normalizeMimePluginArgs(configOrAddon, maybeAddon) {
+  if (configOrAddon && typeof configOrAddon === 'object' && Object.prototype.hasOwnProperty.call(configOrAddon, 'config')) {
+    return { config: configOrAddon.config, addon: configOrAddon.addon || maybeAddon };
+  }
+  if (isAddonLike(configOrAddon)) return { config: undefined, addon: configOrAddon };
+  return { config: configOrAddon, addon: maybeAddon };
+}
+
+function getMimeTypesAndPlugins(configOrAddon, maybeAddon) {
+  const { config, addon } = normalizeMimePluginArgs(configOrAddon, maybeAddon);
   const api = getAddonApi(addon, 'getMimeTypesAndPlugins');
   if (api) {
     try {
-      const result = api();
+      const result = config === undefined ? api() : api(config);
       recordAddonUse('getMimeTypesAndPlugins');
       return result;
     } catch (err) {
@@ -587,23 +841,54 @@ function getMimeTypesAndPlugins(addon) {
     recordAddonFallback('getMimeTypesAndPlugins', 'addon 不可用，使用最小 PluginArray / MimeTypeArray fallback');
   }
 
-  function makeIllegalCtor(name) {
-    return createNativeFunction(name, 0, function () {
-      throw new TypeError(`Illegal constructor`);
-    }, null);
+  const Plugin = createNativeConstructor('Plugin', 0, function () {
+    throwTypeError("Failed to construct 'Plugin': Illegal constructor", null);
+  }, null);
+  const MimeType = createNativeConstructor('MimeType', 0, function () {
+    throwTypeError("Failed to construct 'MimeType': Illegal constructor", null);
+  }, null);
+  const pluginConfigs = config && Array.isArray(config.plugins)
+    ? config.plugins
+    : [
+      { name: 'PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', mimeTypes: [{ type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format' }] },
+      { name: 'Chrome PDF Viewer', filename: 'internal-pdf-viewer', description: 'Portable Document Format', mimeTypes: [{ type: 'text/pdf', suffixes: 'pdf', description: 'Portable Document Format' }] },
+    ];
+  const pluginItems = [];
+  const mimeItems = [];
+
+  for (const pluginConfig of pluginConfigs) {
+    const plugin = Object.create(Plugin.prototype);
+    defineValue(plugin, 'name', String(pluginConfig.name || ''), { writable: false, enumerable: true, configurable: true });
+    defineValue(plugin, 'filename', String(pluginConfig.filename || ''), { writable: false, enumerable: true, configurable: true });
+    defineValue(plugin, 'description', String(pluginConfig.description || ''), { writable: false, enumerable: true, configurable: true });
+    markObjectToString(plugin, 'Plugin');
+
+    const localMimes = [];
+    for (const mimeConfig of Array.isArray(pluginConfig.mimeTypes) ? pluginConfig.mimeTypes : []) {
+      const mime = Object.create(MimeType.prototype);
+      defineValue(mime, 'type', String(mimeConfig.type || ''), { writable: false, enumerable: true, configurable: true });
+      defineValue(mime, 'suffixes', String(mimeConfig.suffixes || ''), { writable: false, enumerable: true, configurable: true });
+      defineValue(mime, 'description', String(mimeConfig.description || ''), { writable: false, enumerable: true, configurable: true });
+      defineValue(mime, 'enabledPlugin', plugin, { writable: false, enumerable: true, configurable: true });
+      markObjectToString(mime, 'MimeType');
+      localMimes.push(mime);
+      mimeItems.push({ name: mime.type, value: mime });
+    }
+
+    defineValue(plugin, 'length', localMimes.length, { writable: false, enumerable: false, configurable: true });
+    localMimes.forEach((mime, index) => defineValue(plugin, String(index), mime, { writable: false, enumerable: true, configurable: true }));
+    defineValue(plugin, Symbol.iterator, createNativeFunction('values', 0, function () {
+      return localMimes[Symbol.iterator]();
+    }, null), { writable: true, enumerable: false, configurable: true });
+    pluginItems.push({ name: plugin.name, value: plugin });
   }
-  const PluginArray = makeIllegalCtor('PluginArray');
-  const MimeTypeArray = makeIllegalCtor('MimeTypeArray');
-  const Plugin = makeIllegalCtor('Plugin');
-  const MimeType = makeIllegalCtor('MimeType');
-  const plugins = [];
-  const mimeTypes = [];
-  defineValue(plugins, 'item', createNativeFunction('item', 1, i => plugins[i] || null, null), { writable: true, enumerable: false, configurable: true });
-  defineValue(plugins, 'namedItem', createNativeFunction('namedItem', 1, name => plugins.find(v => v && v.name === name) || null, null), { writable: true, enumerable: false, configurable: true });
-  defineValue(mimeTypes, 'item', createNativeFunction('item', 1, i => mimeTypes[i] || null, null), { writable: true, enumerable: false, configurable: true });
-  defineValue(mimeTypes, 'namedItem', createNativeFunction('namedItem', 1, type => mimeTypes.find(v => v && v.type === type) || null, null), { writable: true, enumerable: false, configurable: true });
-  markObjectToString(plugins, 'PluginArray');
-  markObjectToString(mimeTypes, 'MimeTypeArray');
+
+  const pluginCollection = createNativeCollection({ name: 'PluginArray', items: pluginItems, toStringTag: 'PluginArray' }, null);
+  const mimeCollection = createNativeCollection({ name: 'MimeTypeArray', items: mimeItems, toStringTag: 'MimeTypeArray' }, null);
+  const plugins = pluginCollection.collection;
+  const mimeTypes = mimeCollection.collection;
+  const PluginArray = pluginCollection.PluginArray || pluginCollection.constructor;
+  const MimeTypeArray = mimeCollection.MimeTypeArray || mimeCollection.constructor;
   return { mimeTypes, plugins, PluginArray, MimeTypeArray, MimeType, Plugin };
 }
 
@@ -644,6 +929,40 @@ function getPrivate(object, key, addon) {
   }
   const map = privateStore.get(object);
   return map ? map.get(String(key)) : undefined;
+}
+
+function hasPrivate(object, key, addon) {
+  const api = getAddonApi(addon, 'hasPrivate');
+  if (api) {
+    try {
+      const ok = api(object, String(key));
+      recordAddonUse('hasPrivate');
+      return ok;
+    } catch (err) {
+      recordAddonFallback('hasPrivate', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('hasPrivate', 'addon 不可用，使用 WeakMap fallback');
+  }
+  const map = privateStore.get(object);
+  return !!(map && map.has(String(key)));
+}
+
+function deletePrivate(object, key, addon) {
+  const api = getAddonApi(addon, 'deletePrivate');
+  if (api) {
+    try {
+      const ok = api(object, String(key));
+      recordAddonUse('deletePrivate');
+      return ok;
+    } catch (err) {
+      recordAddonFallback('deletePrivate', err && err.message ? err.message : String(err));
+    }
+  } else {
+    recordAddonFallback('deletePrivate', 'addon 不可用，使用 WeakMap fallback');
+  }
+  const map = privateStore.get(object);
+  return map ? map.delete(String(key)) : false;
 }
 
 function throwTypeError(message, addon) {
@@ -725,11 +1044,18 @@ module.exports = {
   createNativeGetter,
   createNativeSetter,
   createUndetectable,
+  createInterceptor,
   createNativeObject,
   createProtoChains,
+  getProtoChainRegistry,
+  deleteProtoChainRegistryEntry,
+  clearProtoChainRegistry,
+  createNativeCollection,
   getMimeTypesAndPlugins,
   setPrivate,
   getPrivate,
+  hasPrivate,
+  deletePrivate,
   throwTypeError,
   throwBrowserTypeError,
   illegalConstructorMessage,

@@ -37,7 +37,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 - 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”章节。
-- 必须保留“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
+- 必须保留“补环境框架选择与 Trace 复杂度评估”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
 - 必须写入 `case/result/最终项目总结.md`；除非用户明确要求不生成，否则 `check_final_artifact.js` 会默认检查该中文命名文件。
 
 - 只有用户选择 ruyiPage + RuyiTrace、或用户提供 RuyiTrace NDJSON 日志时，才保留 RuyiTrace 章节；否则删除整章。
@@ -87,6 +87,8 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 取证模式：ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定
 
 - 最终请求 TLS 指纹兼容客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+
+- 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv
 
 - 明确排除：App / 移动端 / Windows / Native / 批量爬虫 / 绕过登录或验证码
 
@@ -215,11 +217,41 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 9. 补环境实现概览
+## 9. 补环境框架选择与 Trace 复杂度评估
+
+- 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv
+
+- 选择来源：用户明确选择 / 用户未选择，按默认不使用
+
+- 是否发生二次提醒或切换：
+
+- Trace 是否存在：有 / 无
+
+- Trace 复杂度等级：低 / 中 / 高 / 未知
+
+- 复杂度依据：WebAPI 类别 / 真实性检测 / 指纹 / 异步 / 状态依赖 / 调用栈分散度
+
+- 重要说明：复杂度评估只用于补环境范围、风险点和优先级，不自动决定补环境框架
+
+- 最终项目 runtime 文件：
+
+- xbs isolated-vm 状态（仅选择 isolated-vm 时填写）：未选择 / 已加载 / ABI 不兼容 / 平台缺失 / API 自检失败
+
+- xbs isolated-vm 二进制来源：随 Skill 资产 / 用户提供替换产物 / 不适用
+
+- Node 版本 / ABI / 平台：
+
+- `window.xbs` API 自检：通过 / 未通过 / 不适用；缺失 API：
+
+- 未选择框架时是否确认无 isolated-vm / vm / jsEnv runtime、`xbs-isolated-vm/` 或 `isolated_vm.node`：是 / 否 / 不适用
 
 
 
-- 运行隔离方式：vm / 独立 Node 进程 / 显式隔离 global
+## 10. 补环境实现概览
+
+
+
+- 运行隔离方式：不使用框架 / xbs isolated-vm / vm / jsEnv / 独立 Node 进程 / 显式隔离 global
 
 - Level 1 基础环境：
 
@@ -235,23 +267,27 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 10. native addon / NativeProtect 使用情况
+## 11. native addon / NativeProtect 使用情况
 
 
 
-- addon.node 检测结果：可用 / 不可用 / 用户明确豁免（不得写“未使用”而不说明原因）
+- native 能力检测结果：addon.node 可用 / xbs isolated-vm 可用 / 不可用 / 用户明确豁免（不得写“未使用”而不说明原因）
 
-- addon 加载路径：仅写相对路径或“随 Skill 资产加载”，不要写本机绝对路径
+- native 加载路径：仅写相对路径或“随 Skill 资产加载”；选择 xbs isolated-vm 时写 `xbs-isolated-vm/<platform>-<arch>/isolated_vm.node`，不要写本机绝对路径
 
-- addon 导出 API：
+- native 导出 API：addon.node 导出 API 或 `window.xbs` 17 个 API：
 
-- 实际使用的 addon API：`createNativeFunction` / `createGetter` / `createSetter` / `createNativeObject` / `createProtoChains` / `createUndetectable` / 其他
+- 实际使用的 native API：`createNativeFunction` / `createGetter` / `createSetter` / `createNativeObject` / `createProtoChains` / `createNativeCollection` / `createInterceptor` / `getMimeTypesAndPlugins` / `createUndetectable` / `setPrivate` / `getPrivate` / `hasPrivate` / `deletePrivate` / 注册表管理 / 其他；选择 xbs isolated-vm 时注明调用来源为 `window.xbs`
 
-- NativeProtect fallback：未发生 / 已发生
+- NativeProtect fallback：未发生 / 已发生；选择 xbs isolated-vm 时如发生 fallback，需说明为什么没有使用 `window.xbs`
 
-- fallback 原因：用户明确要求不使用 addon / addon 缺失 / ABI 不兼容 / addon API 调用失败 / 当前 API 不支持 / 其他
+- fallback 原因：用户明确要求不使用 native 能力 / addon 或 xbs 缺失 / ABI 不兼容 / native API 调用失败 / 当前 API 不支持 / 其他
 
-- `document.all` 处理：addon 精确处理 / JS 近似 fallback / 未涉及
+- `document.all` 处理：addon `createUndetectable` / xbs `createUndetectable` / JS 近似 fallback / 未涉及
+
+- `navigator.plugins` / `navigator.mimeTypes` 处理：addon `getMimeTypesAndPlugins(config)` / xbs `getMimeTypesAndPlugins(config)` / JS fallback / 未涉及
+
+- 集合对象处理：addon `createNativeCollection` / xbs `createNativeCollection` / JS fallback / 未涉及
 
 - toString 保护覆盖：函数 / 构造函数 / getter / setter / 实例对象
 
@@ -259,7 +295,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 11. 指纹值回放
+## 12. 指纹值回放
 
 
 
@@ -277,14 +313,14 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 12. 加密参数生成与样本复用检查
+## 13. 加密参数生成与样本复用检查
 
 - cURL / HAR / fixture 中的样本加密值是否只作为 expected：
 - 最终入口如何生成参数：目标 JS 入口 / signer / 其他
 - 是否发现硬编码样本值：否
 - `check_final_artifact.js` 复用检查结果：
 
-## 13. 代码质量与中文注释
+## 14. 代码质量与中文注释
 
 - 是否已运行 `check_code_quality.js`：
 - 模块拆分情况：
@@ -294,7 +330,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 中文注释是否包含问号、连续问号或乱码：否
 - 修复过的可读性问题：
 
-## 14. TLS 请求验证
+## 15. TLS 请求验证
 
 
 
@@ -314,7 +350,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 15. 最终交付结构
+## 16. 最终交付结构
 
 
 
@@ -334,7 +370,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 16. 测试结果
+## 17. 测试结果
 
 
 
@@ -353,7 +389,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 17. 清理结果
+## 18. 清理结果
 
 
 
@@ -367,7 +403,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 18. 风险与后续建议
+## 19. 风险与后续建议
 
 
 

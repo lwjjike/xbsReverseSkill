@@ -1303,7 +1303,7 @@ node scripts/check_code_quality.js --case-dir case --json
 
 ## 测试 79：新版 addon API 与旧式调用拦截
 
-输入场景：补环境代码使用新版 `createProtoChains([{ name, constructor, instanceFactoryName }])`、`createNativeFunction(false, ...)`、`createGetter(...)`、`createSetter(...)`、`createUndetectable(callback, handlers)`、`getMimeTypesAndPlugins()`、`setPrivate` / `getPrivate`。
+输入场景：补环境代码使用新版 `createProtoChains([{ name, constructor, instanceFactoryName }])`、`createNativeFunction(false, ...)`、`createGetter(...)`、`createSetter(...)`、`createUndetectable(callback, handlers)`、`createNativeCollection(options)`、`createInterceptor(options)`、`getMimeTypesAndPlugins(config)`、`setPrivate` / `getPrivate` / `hasPrivate` / `deletePrivate`。
 
 执行：
 
@@ -1315,7 +1315,7 @@ node scripts/check_env_realism.js --case-dir case --markdown
 期望：
 
 - addon 可用时优先记录实际使用 API。
-- `check_env_realism.js` 能识别 `createProtoChains(descriptors)`、`getMimeTypesAndPlugins`、`setPrivate` / `getPrivate` 等 addon-first 证据。
+- `check_env_realism.js` 能识别 `createProtoChains(descriptors)`、`createNativeCollection`、`createInterceptor`、`getMimeTypesAndPlugins`、`setPrivate` / `getPrivate` / `hasPrivate` / `deletePrivate` 等 addon-first 证据。
 - 如果新代码出现 `createProtoChains('Name', chain)` 或 `createNativeObject('Tag', proto, properties)`，至少输出提醒；若没有明确兼容 / fallback 注释，应视为需要修复。
 
 ## 测试 80：通用代码变更记忆机制
@@ -1641,3 +1641,153 @@ node scripts/check_code_quality.js --file case/result/src/env/install-env.js --m
 - 检查失败。
 - 报告指出属性描述符压在一行、全局 WebAPI 对象 / 方法堆叠、较长单行控制流等问题。
 - 修复后应拆成多行具名函数、清晰 descriptor、模块化安装函数，并补充中文注释说明来源和 fallback 原因。
+
+## 测试 97：补环境前必须询问框架选择且默认不使用
+
+输入场景：用户已确认参数、入口、JS 文件、取证模式和最终请求客户端，准备进入 Node.js 补环境阶段。
+
+期望：
+
+- Skill 必须先读取 `references/runtime-frameworks.md`。
+- 必须提醒用户选择：不使用补环境框架（默认）、`isolated-vm`、Node.js 内置 `vm`、`jsEnv`。
+- 用户未明确选择时，记录为“不使用补环境框架”，不得自动启用 `isolated-vm`、`vm` 或 `jsEnv`。
+- 最终项目中不得混入未选择的 runtime 模板或依赖。
+
+## 测试 98：Trace 复杂度评估不绑定框架选择
+
+输入场景：`case/ruyi-trace/logs/trace.ndjson` 或 `case/tmp/env-trace.jsonl` 存在，日志命中 Canvas、WebGL、Storage、`Function.prototype.toString` 和 `Object.getOwnPropertyDescriptor`。
+
+执行：
+
+```bash
+node scripts/analyze_trace_complexity.js --case-dir case --markdown
+```
+
+期望：
+
+- 输出复杂度等级、命中 WebAPI 类别、真实性检测、指纹、异步、状态依赖和风险。
+- 报告必须明确“复杂度评估不决定框架选择”。
+- 即使复杂度为高，也不得自动选择 `isolated-vm`、`vm` 或 `jsEnv`；框架选择仍以用户确认结果为准。
+- 阶段报告应记录复杂度评估结果和独立的补环境框架选择。
+
+## 测试 99：普通上下文无法继续时二次提醒而不是自动切换
+
+输入场景：用户最初未选择补环境框架，后续普通上下文反复出现 Node 泄露、Realm / intrinsic 差异、`Function("return this")()` 或 `constructor.constructor` 检测问题。
+
+期望：
+
+- Skill 暂停并说明当前问题可能需要补环境框架辅助。
+- 再次让用户选择 `isolated-vm`、`vm`、`jsEnv` 或继续不使用框架。
+- 不得擅自把最终项目切换到 `isolated-vm`、`vm` 或 `jsEnv`。
+- 如果用户继续不使用框架，应在阶段报告和最终总结记录风险。
+
+## 测试 100：新版 addon API 导出与随包产物更新
+
+输入场景：当前平台存在随包 `assets/native-addon/<platform>-<arch>/addon.node`，执行 addon 加载检查。
+
+执行：
+
+```bash
+node scripts/load_native_addon.js --json
+```
+
+期望：
+
+- Windows x64 产物应从新版 `addon.node` 复制到 `assets/native-addon/win32-x64/addon.node` 与 `addon-win32-x64.node`。
+- `exports` 至少包含 `createNativeFunction`、`createGetter`、`createSetter`、`createNativeObject`、`createProtoChains`、`getProtoChainRegistry`、`deleteProtoChainRegistryEntry`、`clearProtoChainRegistry`、`setPrivate`、`getPrivate`、`hasPrivate`、`deletePrivate`、`createInterceptor`、`createNativeCollection`、`getMimeTypesAndPlugins`、`createUndetectable`、`throwTypeError`。
+- 不应依赖 `hello`；如果导出列表没有 `hello`，不视为失败。
+
+## 测试 101：plugins 和 mimeTypes 必须优先 getMimeTypesAndPlugins
+
+输入场景：最终 env 代码安装 `navigator.plugins` 或 `navigator.mimeTypes`，但只写了普通数组、普通对象或手写 `PluginArray` / `MimeTypeArray`，没有 `getMimeTypesAndPlugins`。
+
+执行：
+
+```bash
+node scripts/check_webapi_addon_coverage.js --file case/result/src/env/navigator-env.js --markdown
+```
+
+期望：
+
+- 检查失败。
+- 报告指出 `navigator.plugins` / `navigator.mimeTypes` 未体现 `getMimeTypesAndPlugins(config)` addon-first。
+- 修复方向要求 addon 可用时使用 `addon.getMimeTypesAndPlugins(config)`，真实浏览器插件数据不同则用 config 生成；addon 不可用时才允许 JS fallback 并记录原因。
+
+## 测试 102：浏览器集合对象必须优先 createNativeCollection
+
+输入场景：最终 env 代码用普通 class、普通 function、数组或普通对象实现 `HTMLCollection`、`NodeList`、`PluginArray`、`MimeTypeArray`、`DOMTokenList` 或 `StyleSheetList`，没有 `createNativeCollection` 或 `getMimeTypesAndPlugins` 证据。
+
+执行：
+
+```bash
+node scripts/check_webapi_addon_coverage.js --dir case/result/src/env --markdown
+```
+
+期望：
+
+- 检查失败。
+- 报告指出集合对象缺少 `createNativeCollection` / `getMimeTypesAndPlugins` addon-first。
+- 修复后集合对象应具备 `length`、数字索引、名称访问、`item()`、`namedItem()`、迭代器、构造函数非法调用行为和正确的 `Object.prototype.toString`。
+
+## 测试 103：jsEnv 只能由用户明确选择且不能虚构 API
+
+输入场景：进入正式补环境阶段前，用户还没有选择补环境框架，或只说“可以考虑 jsEnv”但没有提供 jsEnv 项目路径、入口文件和使用文档。
+
+期望：
+
+- Skill 默认仍按“不使用补环境框架”继续。
+- 不得因为 Trace 复杂度高或模型推断自动选择 jsEnv。
+- 如果用户明确选择 jsEnv，必须先要求用户提供项目路径、安装方式、入口文件和使用文档，并检测可用性。
+- 未检测通过前不得复制 `jsenv-runtime.js` 到最终项目，也不得虚构 `jsEnv.createContext`、`jsEnv.run` 等 API。
+- 最终项目只保留用户确认的 runtime；未选择 jsEnv 时不得出现 jsEnv runtime、adapter 或依赖。
+
+## 测试 104：选择 isolated-vm 时必须使用随包魔改 xbs isolated-vm
+
+输入：
+
+```text
+我选择使用 isolated-vm 作为补环境框架。
+```
+
+期望：
+
+- 先读取 `references/runtime-frameworks.md` 与 `references/xbs-isolated-vm-api.md`。
+- 运行 `node scripts/check_xbs_isolated_vm.js --markdown` 或等价检测。
+- 检测内容必须包含当前 Node 版本、ABI、平台、二进制路径、是否加载成功、`window === globalThis`、`window.xbs` 是否存在、17 个 xbs API 是否齐全。
+- 如果当前平台目录缺失或 ABI 不匹配，必须提示用户提供当前平台 / 架构 / Node ABI 匹配的魔改 xbs isolated-vm 构建产物，或改选不使用框架 / vm / jsEnv。
+- 不得自动安装 npm 原版 `isolated-vm`，不得把旧 `addon.node` 桥接进 isolated-vm。
+- 最终项目仅在用户选择 isolated-vm 时复制 `xbs-isolated-vm/<platform>-<arch>/isolated_vm.node`。
+
+## 测试 105：xbs native-first 证据被 addon-first 门禁识别
+
+输入：最终 env 中存在以下 Context 内补环境代码：
+
+```js
+const chain = xbs.createProtoChains([{ name: 'Navigator', constructor() {}, instanceFactoryName: 'createNavigator' }]);
+Object.defineProperty(chain.Navigator.prototype, 'userAgent', {
+  get: xbs.createGetter('userAgent', 0, function () { return 'Mozilla/5.0'; }),
+  enumerable: true,
+  configurable: true,
+});
+const plugins = xbs.getMimeTypesAndPlugins({ plugins: [] });
+```
+
+期望：
+
+- `check_env_realism.js` 将 `xbs.createProtoChains` / `xbs.createGetter` / `xbs.getMimeTypesAndPlugins` 识别为 native-first 证据。
+- `check_webapi_addon_coverage.js` 不应因为使用 `xbs.` 而误报“未发现 addon-first 证据”。
+- 若源码只使用 `NativeProtect` / 普通函数 / 普通对象而没有 `addon.node` 或 `xbs` 证据，应继续失败。
+
+## 测试 106：xbs isolated-vm ABI 不匹配时的可解释失败
+
+输入：
+
+```bash
+node scripts/check_xbs_isolated_vm.js --json
+```
+
+期望：
+
+- 如果当前 Node ABI 与随包 `isolated_vm.node` 不匹配，脚本输出 `status: "abi-mismatch"`、当前 Node 版本、当前 ABI、平台、二进制路径和中文处理建议。
+- 默认模式下该可解释失败不崩溃，便于 Skill 自检；真实 case 已选择 isolated-vm 时使用 `--strict` 作为阻断门禁。
+- 提示用户提供匹配二进制或改选框架，不得建议自动退回 npm 原版 `isolated-vm`。
