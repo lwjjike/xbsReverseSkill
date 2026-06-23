@@ -37,7 +37,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 - 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”章节。
-- 必须保留“补环境框架选择与 Trace 复杂度评估”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
+- 必须保留“动态资源保鲜与运行时刷新”“补环境框架选择与 Trace 复杂度评估”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
 - 必须写入 `case/result/最终项目总结.md`；除非用户明确要求不生成，否则 `check_final_artifact.js` 会默认检查该中文命名文件。
 
 - 只有用户选择 ruyiPage + RuyiTrace、或用户提供 RuyiTrace NDJSON 日志时，才保留 RuyiTrace 章节；否则删除整章。
@@ -181,7 +181,31 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 7. 加密参数定位结论
+## 7. 动态资源保鲜与运行时刷新
+
+
+
+- 是否存在动态 HTML / JS / challenge：有 / 无
+
+- resource manifest：`case/notes/resource-manifest.json` / 未涉及
+
+- 动态资源类型：入口 HTML / JS bundle / 动态 chunk / challenge JS / 403 风控页面 / 内联脚本 / 其他
+
+- 动态性证据：Cache-Control / 短 TTL / 随机 query / hash 变化 / seed / nonce / Set-Cookie / 会话绑定 / 其他
+
+- 是否影响最终参数生成：是 / 否
+
+- 运行时刷新模块：`result/src/resources/fetch-runtime-resources.js` / 未涉及
+
+- 最终入口刷新顺序：刷新当前资源 → 更新 Cookie / Storage / runtime context → 运行 signer → 发送请求
+
+- 动态快照是否进入 result：否
+
+- `check_dynamic_resources.js` 检查结果：通过 / 未执行，原因
+
+
+
+## 8. 加密参数定位结论
 
 
 
@@ -203,7 +227,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 8. Cookie / Storage / Token 分析
+## 9. Cookie / Storage / Token 分析
 
 
 
@@ -217,7 +241,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 9. 补环境框架选择与 Trace 复杂度评估
+## 10. 补环境框架选择与 Trace 复杂度评估
 
 - 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv
 
@@ -247,7 +271,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 10. 补环境实现概览
+## 11. 补环境实现概览
 
 
 
@@ -267,7 +291,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 11. native addon / NativeProtect 使用情况
+## 12. native addon / NativeProtect 使用情况
 
 
 
@@ -295,7 +319,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 12. 指纹值回放
+## 13. 指纹值回放
 
 
 
@@ -313,14 +337,14 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 13. 加密参数生成与样本复用检查
+## 14. 加密参数生成与样本复用检查
 
 - cURL / HAR / fixture 中的样本加密值是否只作为 expected：
 - 最终入口如何生成参数：目标 JS 入口 / signer / 其他
 - 是否发现硬编码样本值：否
 - `check_final_artifact.js` 复用检查结果：
 
-## 14. 代码质量与中文注释
+## 15. 代码质量与中文注释
 
 - 是否已运行 `check_code_quality.js`：
 - 模块拆分情况：
@@ -330,7 +354,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 中文注释是否包含问号、连续问号或乱码：否
 - 修复过的可读性问题：
 
-## 15. TLS 请求验证
+## 16. TLS 请求验证
 
 
 
@@ -350,7 +374,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 16. 最终交付结构
+## 17. 最终交付结构
 
 
 
@@ -370,7 +394,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 17. 测试结果
+## 18. 测试结果
 
 
 
@@ -389,7 +413,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 18. 清理结果
+## 19. 清理结果
 
 
 
@@ -403,7 +427,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 19. 风险与后续建议
+## 20. 风险与后续建议
 
 
 

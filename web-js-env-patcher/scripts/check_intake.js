@@ -93,7 +93,7 @@ function detectParam(text) {
     if (m) return m[0];
     return direct;
   }
-  const common = ['a_bogus', 'h5st', 'x-s', 'x-t', 'x-sign', 'sign', 'signature', 'token'];
+  const common = ['__zse_ck', 'zse_ck', 'a_bogus', 'h5st', 'x-s', 'x-t', 'x-sign', 'sign', 'signature', 'token'];
   for (const p of common) {
     if (new RegExp(`(^|[^\\w-])${p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w-]|$)`, 'i').test(text)) return p;
   }
@@ -123,15 +123,19 @@ function hasKnownJs(text) {
 
 function detectAcquisitionMode(text) {
   const direct = lineValue(text, ['取证模式', '浏览器取证模式', '浏览器模式', '取证工具', '浏览器工具', 'Ruyi 工具选择', 'Ruyi工具选择', 'Acquisition Mode']);
-  const checked = text.match(/^\s*[-*+]\s*\[[xX]\]\s*(ruyiPage\s*\+\s*RuyiTrace|仅\s*ruyiPage|只用\s*ruyiPage|CloakBrowser|用户手动取证|手动取证|AI\s*自行决定)[^\n\r]*/im);
+  const checked = text.match(/^\s*[-*+]\s*\[[xX]\]\s*(ruyiPage\s*\+\s*RuyiTrace|仅\s*ruyiPage|只用\s*ruyiPage|Camoufox\s*\+\s*camoufox-reverse-mcp|仅\s*Camoufox|只用\s*Camoufox|CloakBrowser|用户手动取证|手动取证|AI\s*自行决定)[^\n\r]*/im);
   const src = direct || (checked ? checked[1] : '');
   if (/ruyiPage\s*\+\s*RuyiTrace|ruyiPage.*RuyiTrace|如意\s*Trace/i.test(src)) return 'ruyiPage + RuyiTrace';
   if (/仅\s*ruyiPage|只用\s*ruyiPage|ruyiPage/i.test(src)) return '仅 ruyiPage';
+  if (/Camoufox\s*\+\s*camoufox-reverse-mcp|Camoufox.*MCP|camoufox-reverse-mcp/i.test(src)) return 'Camoufox + camoufox-reverse-mcp';
+  if (/仅\s*Camoufox|只用\s*Camoufox|Camoufox/i.test(src)) return '仅 Camoufox';
   if (/CloakBrowser/i.test(src)) return 'CloakBrowser';
   if (/用户手动取证|手动取证|离线材料|手动提供|手动浏览器/i.test(src)) return '用户手动取证';
   if (/AI\s*自行决定|自行决定|你来决定|自动选择/i.test(src)) return 'AI 自行决定';
   if (/(选择|使用|采用|取证模式是|用)\s*(ruyiPage\s*\+\s*RuyiTrace|ruyiPage.*RuyiTrace)/i.test(text)) return 'ruyiPage + RuyiTrace';
   if (/(选择|使用|采用|取证模式是|用)\s*(仅\s*)?ruyiPage/i.test(text)) return '仅 ruyiPage';
+  if (/(选择|使用|采用|取证模式是|用).*(Camoufox\s*\+\s*camoufox-reverse-mcp|Camoufox.*MCP|camoufox-reverse-mcp)/i.test(text)) return 'Camoufox + camoufox-reverse-mcp';
+  if (/(选择|使用|采用|取证模式是|用).*(仅\s*)?Camoufox/i.test(text)) return '仅 Camoufox';
   if (/(选择|使用|采用|取证模式是|用)\s*CloakBrowser/i.test(text)) return 'CloakBrowser';
   if (/(选择|使用|采用|取证模式是|用).*(用户手动取证|手动取证|离线材料|手动提供)/i.test(text)) return '用户手动取证';
   if (/(选择|使用|采用|取证模式是|用).*(AI\s*自行决定|自行决定|你来决定|自动选择)/i.test(text)) return 'AI 自行决定';
@@ -143,6 +147,7 @@ function detectTlsClientStrategy(text) {
   const src = direct || text;
   if (/Node\.?js.*CycleTLS|CycleTLS|cycleTls|cycletls/i.test(src)) return 'Node.js CycleTLS';
   if (/Node\.?js.*impers|\bimpers\b/i.test(src)) return 'Node.js impers';
+  if (/Node\.?js.*curl-cffi|curl-cffi-node|curl-cffi/i.test(src)) return 'Node.js curl-cffi';
   if (/Python.*curl_cffi|curl_cffi/i.test(src)) return 'Python curl_cffi';
   if (/Python.*cffi_curl|cffi_curl/i.test(src)) return 'Python cffi_curl';
   if (/Python.*cyCronet|cyCronet|cycronet/i.test(src)) return 'Python cyCronet';
@@ -179,7 +184,7 @@ function analyze(text) {
     ['paramLocation', '参数出现位置 Query/Header/Body/Cookie'],
     ['requestSample', '成功请求样本（优先 Copy as cURL 或 HAR）'],
     ['acquisitionMode', '取证模式（ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定）'],
-    ['tlsClientStrategy', '最终请求 TLS 指纹兼容客户端（Node.js CycleTLS / Node.js impers / Python curl_cffi / Python cyCronet / 不发真实请求）'],
+    ['tlsClientStrategy', '最终请求 TLS 指纹兼容客户端（Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求）'],
   ];
   const missing = required.filter(([key]) => !fields[key]).map(([, label]) => label);
   const complete = missing.length === 0;

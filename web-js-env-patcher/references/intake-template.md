@@ -11,6 +11,8 @@
 
 - [ ] ruyiPage + RuyiTrace（推荐）
 - [ ] 仅 ruyiPage
+- [ ] Camoufox + camoufox-reverse-mcp
+- [ ] 仅 Camoufox
 - [ ] CloakBrowser
 - [ ] 用户手动取证（你提供 cURL / HAR / JS 文件 / 调用栈截图 / RuyiTrace 日志）
 - [ ] AI 自行决定（我会先检测工具并给出建议，启动前再次确认）
@@ -21,6 +23,7 @@
 
 - [ ] Node.js CycleTLS
 - [ ] Node.js impers
+- [ ] Node.js curl-cffi
 - [ ] Python curl_cffi
 - [ ] Python cffi_curl
 - [ ] Python cyCronet
@@ -116,3 +119,5 @@
 ```
 
 如果必填字段缺失，只要求用户先补齐缺失的必填项，不要让用户一次性补充所有建议项。
+
+特别注意：用户只提供 cURL、Cookie、旧补环境文件或“要求成功请求”时，仍视为未完成信息收集。缺少“取证模式”和“最终请求 TLS 指纹兼容客户端”任一项时，不得开始取证、补环境或发送真实请求。

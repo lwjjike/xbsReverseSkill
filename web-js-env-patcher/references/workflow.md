@@ -2,6 +2,45 @@
 
 本文件用于指导写补环境代码之前的详细流程。
 
+## 阶段 -1：新 case 第一回复硬门禁
+
+每次用户给出新网站、新接口、新 cURL / HAR、旧补环境文件，或要求“帮我分析 / 补环境 / 成功请求到数据”时，第一回复先做门禁检查，不直接进入取证或补环境。
+
+即使用户提供了很长的 cURL、Cookie、403/200 现象、JS 文件线索、旧代码文件名，仍然不能把它视为已经通过主流程。cURL 只是请求样本，不等于取证模式已确认，也不等于最终请求 TLS 客户端已确认。
+
+第一回复必须输出：
+
+```markdown
+## 信息完整性检查
+
+### 已识别信息
+- 目标网站 / 页面：
+- 目标 API：
+- 请求方法：
+- 已提供请求样本：
+- 已知响应现象：
+- 已知旧代码 / JS 文件：
+- 用户已明确的目标参数：
+
+### 缺失 / 待确认信息
+- 取证模式：未确认 / ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定
+- 最终请求 TLS 指纹兼容客户端：未确认 / Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
+- 是否有授权测试权限：
+- 是否需要登录：
+- 本次确认要分析的加密 / 风控参数：
+- 是否允许创建 case 目录和阶段报告：
+
+### 初步发现的可疑参数候选
+| 参数名 | 位置 | 疑似原因 | 是否等待用户确认 |
+|---|---|---|---|
+|  | Query / Header / Body / Cookie |  | 是 |
+
+### 暂停说明
+在你确认取证模式、最终请求客户端和本次分析参数前，我不会启动浏览器取证、下载 JS、运行 Hook、修改或运行旧补环境代码、复用 cURL 中的动态参数，也不会发送真实请求。
+```
+
+如果缺少取证模式或最终请求 TLS 客户端，第一回复必须停在本阶段和阶段 0.5 / 0.6；只能继续做离线整理、列缺失项和生成 `case/阶段报告/01-需求信息确认.md`，不能进入请求验证、JS 收集、入口定位、Node trace 或补环境代码。
+
 ## 阶段 0：范围确认
 
 确认以下事项：
@@ -32,6 +71,8 @@
 如果所选工具不可用或后续需要切换工具，暂停并重新让用户确认。
 
 如果用户选择 ruyiPage + RuyiTrace，但检测到 RuyiTrace 未安装或目录不完整，不能自动降级为仅 ruyiPage。必须先提示用户选择“安装 / 提供 RuyiTrace 路径”或“明确降级为仅 ruyiPage”；用户选择安装时，等待用户完成安装并重新检测通过后，才继续需要 NDJSON 的流程。
+
+如果用户没有明确选择取证模式，不能因为用户提供了 cURL、Cookie、目标站 URL、旧代码或“请成功请求到数据”的要求而默认启动任何浏览器工具。只能给出取证模式选项并等待确认；如果用户选择“AI 自行决定”，也必须先检测工具并回报拟用方案，等待用户确认后再启动。
 
 ## 阶段 0.6：最终请求 TLS 指纹兼容客户端确认
 
@@ -84,6 +125,13 @@ node scripts/check_stage_reports.js --case-dir case --require-stage 需求信息
 如果信息不完整，列出缺失项，并使用 `intake-template.md` 让用户补充。
 
 如果信息完整，先整理任务摘要并请求用户确认，不要直接进入分析。
+
+强制阻断项：
+
+- 未确认取证模式：不得打开网页、抓包、Hook、截图、下载 JS 或采集 RuyiTrace。
+- 未确认最终请求 TLS 客户端且任务要求成功请求：不得发送真实请求，也不得先用普通 HTTP 客户端试错。
+- 未确认本次分析参数：不得只盯用户指定参数进入补环境；必须先列出 Query / Header / Body / Cookie 中所有可疑候选并让用户确认。
+- 未确认授权 / 登录状态：不得尝试绕过登录、验证码、MFA、风控或访问控制。
 
 ## 阶段 2：请求样本检查
 
@@ -313,6 +361,40 @@ case/
 - 是否存在 WASM：
 - 是否可以进入补环境准备：
 ```
+
+## 阶段 5.2：动态 HTML / JS 资源保鲜检查
+
+下载或保存 HTML、JS bundle、动态 chunk、challenge JS、403/风控页面和内联脚本后，先判断这些资源是长期静态文件，还是会随时间、会话、Cookie、seed、nonce、地域或 TLS 指纹变化的动态资源。
+
+强制规则：
+
+- 本地动态 HTML / JS 只能作为分析快照，不得直接进入最终产物主路径。
+- 对每个资源记录 URL、请求时间、状态码、响应头、Set-Cookie、body sha256、Cache-Control、Expires、ETag、Last-Modified、依赖 Cookie / seed / nonce、动态性判定、最终使用方式。
+- 将清单写入 `case/notes/resource-manifest.json`。
+- 命中 `no-store/no-cache/private/max-age=0`、短 TTL、随机 query、同 URL 多次 hash 变化、HTML 内 seed / nonce / challenge 变化、403 challenge JS、会话绑定 Cookie 时，最终入口必须实现运行时刷新。
+- 最终入口应先重新请求当前 HTML / JS / challenge / seed，再运行补环境生成参数和发送请求。
+
+推荐命令：
+
+```bash
+node scripts/check_dynamic_resources.js --case-dir case --markdown
+node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refresh --markdown
+```
+
+推荐输出：
+
+```markdown
+## 动态资源保鲜检查
+
+- 动态 HTML / JS：有 / 无
+- 分析快照目录：
+- 资源 manifest：
+- 影响最终生成参数的动态资源：
+- 最终运行时刷新模块：
+- 是否允许进入补环境准备：
+```
+
+如果动态资源影响目标参数生成，但尚未设计运行时刷新链路，不得进入最终交付；如果因此请求失败，先刷新资源和 seed，再判断是否继续补 WebAPI。
 
 ## 阶段 5.5：RuyiTrace NDJSON 优先分析
 

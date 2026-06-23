@@ -998,6 +998,10 @@ function renderMarkdown(result) {
   if (result.ruyiTrace.firefoxExe) lines.push(`- trace Firefox：${result.ruyiTrace.firefoxExists ? '存在' : '不存在'} - ${result.ruyiTrace.firefoxExe}`);
   if (result.ruyiTrace.marker) lines.push(`- 定制内核标志：${result.ruyiTrace.markerExists ? '存在' : '不存在'} - ${result.ruyiTrace.marker}`);
   if (result.ruyiTrace.reason) lines.push(`- 原因：${result.ruyiTrace.reason}`);
+  if (result.ruyiTrace.installed) {
+    lines.push('- 自动捕获策略：RuyiTrace 已检测通过时，后续应优先运行 `scripts/capture_ruyitrace_log.js` 自动捕获并导入 NDJSON；只有自动捕获失败、需要登录 / 验证 / 权限交互或用户明确选择手动时，才要求用户手动采集。');
+    lines.push('- 自动捕获示例：`node scripts/capture_ruyitrace_log.js --url <target-page-url> --case-dir case --ruyitrace-home <RuyiTrace-dir> --duration 90 --import-after --markdown`');
+  }
 
 
   lines.push('', '## Camoufox');

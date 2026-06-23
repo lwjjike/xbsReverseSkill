@@ -280,6 +280,29 @@ window.makeSign = () => ({ leak: window.leak });
 - 不要等确认存在自动化 / CDP 检测后才提示工具选择。
 - 用户确认后，后续抓包、JS 收集、Hook、断点、截图、RuyiTrace 日志采集必须沿用该模式；如需切换工具必须再次确认。
 
+## 测试 25A：新 case 第一回复必须先做信息完整性门禁
+
+输入场景：
+
+```text
+用户给出一个新网站、目标 URL、很长的 Copy as cURL、403/200 现象、某个 Cookie 参数生成描述、旧补环境文件名，并要求“帮我使用补环境方式成功请求到数据”。
+但用户没有明确选择取证模式，也没有明确选择最终请求 TLS 指纹兼容客户端。
+```
+
+期望：
+
+- 第一回复必须先输出“信息完整性检查”，列出已识别信息和缺失 / 待确认信息。
+- 必须提示缺少取证模式，并给出 ruyiPage + RuyiTrace、仅 ruyiPage、Camoufox + camoufox-reverse-mcp、仅 Camoufox、CloakBrowser、用户手动取证、AI 自行决定等选项。
+- 必须提示缺少最终请求 TLS 指纹兼容客户端，并给出 Node.js CycleTLS、Node.js impers、Node.js curl-cffi、Python curl_cffi、Python cffi_curl、Python cyCronet、不发真实请求等选项。
+- 必须从 cURL 的 Query / Header / Body / Cookie 中初步列出可疑加密 / 风控参数候选，并要求用户确认本次分析哪些参数。
+- 必须声明确认前不会启动浏览器取证、下载 JS、运行 Hook、修改或运行旧代码、复用 cURL 中的动态参数，也不会发送真实请求。
+- 可以离线整理用户提供的信息，可以初始化阶段报告；但不得进入入口定位、JS 收集、Node trace、补环境代码或最终请求。
+
+反例：
+
+- 看到 cURL 很完整就直接打开目标站、运行旧 `zhihu.js`、下载 JS、开始补环境或发送请求；该行为不通过。
+- 用户要求“成功请求到数据”就跳过 TLS 客户端选择，用普通 `fetch` / `axios` / `requests` 先试；该行为不通过。
+
 ## 测试 26：ruyiPage / RuyiTrace 检测
 
 输入：
@@ -299,6 +322,34 @@ node scripts/check_external_tools.js --python python --ruyipage-browser-path <fi
 - 输出 RuyiTrace 是否检测到、可执行文件和定制内核标志是否存在。
 - 未检测到定制 Firefox 时，提示先询问用户是否已经安装；已安装则提供 install-dir 或 Firefox 可执行文件路径，未安装则提供安装目录。
 - 如果只检测到系统 Firefox fallback，判定不合格，不允许直接启动 ruyiPage。
+
+## 测试 26A：RuyiTrace 已安装时必须自动捕获优先
+
+输入场景：
+
+```text
+取证模式：ruyiPage + RuyiTrace
+检测结果：ruyiPage 可用；RuyiTrace.exe、firefox/firefox.exe、firefox/RUYI_DOMTRACE.txt 均存在
+case 中尚无 RuyiTrace NDJSON
+用户没有明确要求手动取证
+```
+
+期望：
+
+- 不提示用户“先手动打开 RuyiTrace 采集日志”作为默认路径。
+- 先运行自动捕获计划，例如：
+
+  ```bash
+  node scripts/capture_ruyitrace_log.js --url <target-page-url> --case-dir case --ruyitrace-home <RuyiTrace-dir> --dry-run --markdown
+  node scripts/capture_ruyitrace_log.js --url <target-page-url> --case-dir case --ruyitrace-home <RuyiTrace-dir> --duration 90 --import-after --markdown
+  ```
+
+- 自动捕获成功后必须导入 NDJSON 并生成 `notes/ruyitrace-summary.md`。
+- 只有自动捕获失败、需要登录 / 验证 / 权限交互、目标路径未覆盖或用户明确选择手动时，才要求用户手动采集 / 提供 NDJSON，并记录失败原因。
+
+反例：
+
+- 明明检测到 RuyiTrace 已安装，却要求用户先手动打开 GUI、手动点开始/停止、手动提供日志；该行为不通过。
 
 ## 测试 27：RuyiTrace 日志导入
 
@@ -460,7 +511,7 @@ node scripts/install_ruyipage_runtime.js --python python --install-dir <download
 - 不得因为尚未确认有自动化检测而改用普通 Playwright / Puppeteer。
 - 如果 ruyiPage 不可用，暂停并请求用户确认安装、提供路径或切换工具。
 
-输入同样信息但缺少“取证模式”时，期望信息完整性检查不通过，并要求用户从五种模式中选择。
+输入同样信息但缺少“取证模式”时，期望信息完整性检查不通过，并要求用户从 ruyiPage + RuyiTrace、仅 ruyiPage、Camoufox + camoufox-reverse-mcp、仅 Camoufox、CloakBrowser、用户手动取证、AI 自行决定中选择。
 
 ## 测试 36：测试完成后立即清理中间产物
 
@@ -748,7 +799,7 @@ Cookie 与 session / SSO / Authorization / 账号权限绑定。
 
 - `check_intake.js` 检查不通过。
 - 缺失项包含“最终请求 TLS 指纹兼容客户端”。
-- 提示用户选择 Node.js CycleTLS、Node.js impers、Python curl_cffi、Python cffi_curl、Python cyCronet，或不发真实请求。
+- 提示用户选择 Node.js CycleTLS、Node.js impers、Node.js curl-cffi、Python curl_cffi、Python cffi_curl、Python cyCronet，或不发真实请求。
 
 输入补充：
 
@@ -1791,3 +1842,90 @@ node scripts/check_xbs_isolated_vm.js --json
 - 如果当前 Node ABI 与随包 `isolated_vm.node` 不匹配，脚本输出 `status: "abi-mismatch"`、当前 Node 版本、当前 ABI、平台、二进制路径和中文处理建议。
 - 默认模式下该可解释失败不崩溃，便于 Skill 自检；真实 case 已选择 isolated-vm 时使用 `--strict` 作为阻断门禁。
 - 提示用户提供匹配二进制或改选框架，不得建议自动退回 npm 原版 `isolated-vm`。
+
+## 测试 107：动态 HTML / JS 必须运行时刷新
+
+输入场景：`case/notes/resource-manifest.json` 中存在资源：
+
+```json
+{
+  "resources": [
+    {
+      "url": "https://example.com/challenge.js?ts=1",
+      "type": "js",
+      "file": "case/js/snapshots/challenge.js",
+      "sha256": "abc",
+      "dynamic": true,
+      "use": "analysis-snapshot",
+      "requiredForFinal": true,
+      "runtimeRefresh": false
+    }
+  ]
+}
+```
+
+执行：
+
+```bash
+node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refresh --markdown
+```
+
+期望：
+
+- 检查失败，退出码为 `1`。
+- 明确指出该动态资源影响最终参数生成，但未声明 `runtimeRefresh: true`，且缺少 `refreshEntry`。
+- Skill 不得继续把旧 HTML / JS / challenge 快照固定写入最终 signer。
+
+## 测试 108：最终产物不得包含动态快照
+
+输入场景：`resource-manifest.json` 标记 `case/js/snapshots/challenge.js` 为 `dynamic: true`，同时 `case/result/` 中存在相同内容或 `snapshots/challenge.js`。
+
+执行：
+
+```bash
+node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refresh --markdown
+```
+
+期望：
+
+- 检查失败。
+- 报告指出动态快照内容疑似被复制到最终产物，或 `result/` 中存在 snapshots 路径。
+- 修复方向是把旧快照留在 `case/js/snapshots/` 用于分析，把最终资源获取逻辑迁移到 `result/src/resources/fetch-runtime-resources.js` 或等价模块。
+
+## 测试 109：动态资源刷新模块通过检查
+
+输入场景：动态资源影响最终参数生成，但 manifest 中已设置：
+
+```json
+{
+  "dynamic": true,
+  "use": "analysis-snapshot",
+  "requiredForFinal": true,
+  "runtimeRefresh": true,
+  "refreshEntry": "result/src/resources/fetch-runtime-resources.js"
+}
+```
+
+并且 `case/result/final.js` 中先调用 `fetchRuntimeResources` 或等价刷新函数，再调用 signer 生成参数。
+
+执行：
+
+```bash
+node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refresh --markdown
+```
+
+期望：
+
+- 检查通过。
+- 输出动态资源数量、影响最终参数生成的资源数量、刷新模块路径。
+- 仍需由 `check_final_artifact.js` 确认最终入口唯一、无自动化代码、请求由已确认 TLS 指纹兼容客户端完成。
+
+## 测试 110：fixture 资源 hash 变化先判断过期
+
+输入场景：fixture 中记录 `htmlSha256` / `jsSha256` / `challengeSeed`，当前运行时刷新得到的 hash 与 fixture 不一致。
+
+期望：
+
+- 不直接把参数不一致归因于补环境错误。
+- 先检查 `resource-manifest.json`、Cache-Control、Set-Cookie、HTML seed、challenge JS URL 和当前 runtime refresh 结果。
+- 如果确认资源过期或 seed 更新，先刷新资源并补采 fixture；只有当前有效资源一致但输出仍不一致时，才继续补 WebAPI。

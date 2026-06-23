@@ -176,7 +176,18 @@
 8. **最终代码必须简洁可读并带中文注释**  
    最终补环境代码必须按职责拆分模块，禁止压缩、堆叠、过长函数、过深嵌套和无意义命名。所有手写源码必须有文件头中文职责注释，关键 WebAPI、getter / setter、addon-first、fallback、指纹回放和加密入口必须有中文说明。中文注释必须 UTF-8 正常显示，不得包含问号、连续问号或乱码。原始目标 bundle 如必须保留，应放在 `src/target/original/` 等独立目录，不得和手写补环境代码混在一起。
 
-9. **必须交付前检查**  
+9. **动态 HTML / JS 必须运行时刷新**
+
+   如果 `case/notes/resource-manifest.json` 中存在 `dynamic: true` 且 `requiredForFinal: true` 的资源，最终项目必须包含运行时刷新模块，例如 `src/resources/fetch-runtime-resources.js`。`final.js` / `final.py` 执行顺序必须是：刷新当前 HTML / JS / challenge / seed → 更新 Cookie / Storage / runtime context → 加载当前资源运行 signer → 使用已确认 TLS 指纹兼容客户端发送最终请求。
+
+   不得把 `case/js/snapshots/`、403 / challenge 页面、动态 HTML、动态 chunk 或旧 seed 固定复制到 `result/` 作为 signer 主路径；这些快照只能用于分析、fixture 对比和历史证据。交付前必须运行：
+
+   ```bash
+   node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refresh --markdown
+   ```
+
+
+10. **必须交付前检查**  
 
    交付前运行：
 
@@ -233,6 +244,10 @@ case/result/
     ├── request/
 
     │   └── client.js        # Node.js CycleTLS / impers 请求，或用户确认不发真实请求
+
+    ├── resources/
+
+    │   └── fetch-runtime-resources.js # 可选：动态 HTML / JS / challenge 运行时刷新
 
     └── utils/
 
@@ -307,6 +322,13 @@ case/result/
 
 
 
+let fetchRuntimeResources = null;
+try {
+  ({ fetchRuntimeResources } = require('./src/resources/fetch-runtime-resources'));
+} catch (_) {
+  // 无动态资源时可以不提供刷新模块；存在动态资源时必须提供并通过检查。
+}
+
 const { makeEncryptedParams } = require('./src/target/entry');
 
 const { sendRequest } = require('./src/request/client');
@@ -336,8 +358,13 @@ const CONFIG = {
 
 async function main() {
 
+  // 如果存在动态 HTML / JS / challenge，先刷新当前有效资源，旧快照不能作为最终主输入
+  const runtimeResources = typeof fetchRuntimeResources === 'function'
+    ? await fetchRuntimeResources(CONFIG)
+    : null;
+
   // 加密参数必须由补环境后的目标入口动态生成，不复用 cURL 样本值
-  const params = await makeEncryptedParams({ request: CONFIG });
+  const params = await makeEncryptedParams({ request: CONFIG, runtimeResources });
 
   const response = await sendRequest(CONFIG, params);
 
@@ -455,6 +482,10 @@ if __name__ == "__main__":
 
 - [ ] fixtures 已通过；动态参数建议三组以上。
 
+- [ ] 如存在动态 HTML / JS / challenge，已生成 `case/notes/resource-manifest.json`，并运行 `check_dynamic_resources.js --require-runtime-refresh` 通过。
+
+- [ ] 动态快照未复制进 `result/`；最终入口会运行时刷新当前资源。
+
 - [ ] Cookie、token、Authorization、localStorage 等敏感值已脱敏或仅由用户本地配置，不明文写入报告。
 
 - [ ] 临时 trace、hook、日志、HAR、截图、Profile、缓存和测试文件已清理。
@@ -488,6 +519,14 @@ if __name__ == "__main__":
 - 是否包含多余测试/临时文件：否
 
 - fixtures 验证：通过 / 未执行，原因
+
+- 动态资源保鲜检查：无动态资源 / 已运行时刷新 / 未通过，原因
+
+- resource manifest：`case/notes/resource-manifest.json` / 未涉及
+
+- 运行时刷新模块：`result/src/resources/fetch-runtime-resources.js` / 未涉及
+
+- 动态快照是否进入 result：否
 
 - 最终真实请求验证：已执行 / 未执行，原因
 

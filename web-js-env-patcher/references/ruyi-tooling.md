@@ -31,7 +31,7 @@
 6. 输出补环境计划时，必须标明哪些环境依赖来自 RuyiTrace 证据，哪些只是 Node trace / 推断，避免把推断写成事实。
 7. RuyiTrace 长字符串字段可能被截断。导入日志后，如果任意字符串字段达到或接近 4000 字符，必须标记为疑似截断：真实长度写 `unknown`，最小长度写可见长度，不能把 4000 或可见长度解释为加密参数真实长度。
 
-如果用户选择了 ruyiPage + RuyiTrace 但尚未提供日志，进入补环境或遇到环境问题时应先暂停并提醒用户采集 / 提供 NDJSON；除非用户明确确认无法提供，才降级为 ruyiPage 网络证据 + Node trace 流程。
+如果用户选择了 ruyiPage + RuyiTrace 但尚无日志，不能默认等待用户手动 trace。应先检测 RuyiTrace 是否已安装；检测通过后优先用 `scripts/capture_ruyitrace_log.js` 自动启动随 RuyiTrace 提供的 trace Firefox 捕获 NDJSON，再导入摘要。只有自动捕获失败、需要登录 / 验证 / 权限交互、目标路径未覆盖、工具不可控，或用户明确选择手动取证时，才暂停并让用户手动协助采集 / 提供 NDJSON；用户明确确认无法提供后，才降级为 ruyiPage 网络证据 + Node trace 流程。
 
 如果用户选择了 ruyiPage + RuyiTrace 但检测到 RuyiTrace 未安装或目录不完整，不得自动改成“仅 ruyiPage”，也不要只建议“仅使用 ruyiPage”。必须先引导用户安装 / 提供 RuyiTrace 路径，或让用户明确确认降级；用户选择安装时，需要等待用户安装完成并再次验证通过后才继续任何依赖 NDJSON 的流程。
 
@@ -256,17 +256,51 @@ packets = page.capture.wait(timeout=30, count=1)
 
 ## RuyiTrace 日志采集流程
 
-用户选择 RuyiTrace 后：
+用户选择 RuyiTrace 后，采集策略是 **自动捕获优先，手动采集兜底**。
 
-1. 确认 `RuyiTrace.exe` 与 `firefox/` 子目录完整。
-2. 打开 `RuyiTrace.exe`。
-3. 填写启动页面。
-4. 选择日志目录，建议选择当前 case 的 `ruyi-trace/logs/` 或用户指定目录。
-5. 点击“开始采集”。
-6. 在浏览器中正常浏览并触发目标指纹 / 加密参数生成逻辑。
-7. 点击“停止采集”。
-8. 找到 `trace_<时间戳>_<PID>.ndjson`。
-9. 使用脚本复制到 case 并生成摘要：
+### 自动捕获优先
+
+检测到 `RuyiTrace.exe`、`firefox/` 子目录、`firefox/firefox.exe` 和 `firefox/RUYI_DOMTRACE.txt` 完整后，不要默认让用户手动打开 GUI。优先使用随包脚本自动启动 RuyiTrace 的 trace Firefox，并通过 `MOZ_DOM_TRACE` 环境变量写出 NDJSON：
+
+```bash
+node scripts/capture_ruyitrace_log.js --url <target-page-url> --case-dir case --ruyitrace-home <RuyiTrace-dir> --dry-run --markdown
+node scripts/capture_ruyitrace_log.js --url <target-page-url> --case-dir case --ruyitrace-home <RuyiTrace-dir> --duration 90 --import-after --markdown
+```
+
+执行要求：
+
+1. 自动创建或使用 `case/ruyi-trace/logs/` 作为日志目录，使用 `case/tmp/ruyitrace-profile/` 或用户确认的临时 Profile。
+2. 使用 RuyiTrace 随包 trace Firefox，而不是普通系统 Firefox、普通 Playwright、Puppeteer 或 ruyiPage 的 Firefox runtime。
+3. 设置 `MOZ_DOM_TRACE=1`、`MOZ_DOM_TRACE_FILE=<case trace file>`、`MOZ_DOM_TRACE_LIMIT=<limit>` 和 `MOZ_DISABLE_LAUNCHER_PROCESS=1`。
+4. 打开目标页面后触发最少量必要业务动作；如果需要登录、验证码、MFA、设备验证或权限确认，暂停让用户在该 trace Firefox 中手动完成，再继续采集。
+5. 自动捕获结束后，立即运行 `import_ruyitrace_log.js` 导入日志、生成 `notes/ruyitrace-summary.md`，并检查长字段截断风险。
+6. 如果自动捕获没有生成 NDJSON，先记录失败原因和已执行命令，再进入手动兜底；不要把“没有日志”误写成目标没有环境访问。
+
+自动捕获成功后继续：
+
+```bash
+node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --truncation-threshold 3900 --markdown
+```
+
+### 手动采集兜底
+
+只有在以下情况才要求用户手动采集：
+
+- 自动捕获启动失败或 RuyiTrace trace Firefox 无法写日志。
+- 目标必须由用户登录、验证、MFA、设备确认或完成复杂交互。
+- 用户明确要求使用 RuyiTrace GUI。
+- 自动采集的日志未覆盖目标参数生成路径，需要用户按指定动作重新采集。
+
+手动流程：
+
+1. 打开 `RuyiTrace.exe`。
+2. 填写启动页面。
+3. 选择日志目录，建议选择当前 case 的 `ruyi-trace/logs/` 或用户指定目录。
+4. 点击“开始采集”。
+5. 在浏览器中正常浏览并触发目标指纹 / 加密参数生成逻辑。
+6. 点击“停止采集”。
+7. 找到 `trace_<时间戳>_<PID>.ndjson`。
+8. 使用脚本复制到 case 并生成摘要：
 
 ```bash
 node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --markdown
