@@ -1929,3 +1929,107 @@ node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refres
 - 不直接把参数不一致归因于补环境错误。
 - 先检查 `resource-manifest.json`、Cache-Control、Set-Cookie、HTML seed、challenge JS URL 和当前 runtime refresh 结果。
 - 如果确认资源过期或 seed 更新，先刷新资源并补采 fixture；只有当前有效资源一致但输出仍不一致时，才继续补 WebAPI。
+
+## 测试 111：验证码接口确认门禁
+
+输入场景：用户已提供完整 URL、API、cURL、参数、取证模式和 TLS 客户端，但接口名或参数包含 `captcha`、`verify`、`challenge`、`track` 等验证码特征。
+
+期望：
+
+- 在任何浏览器取证、RuyiTrace 捕获、Hook、断点、JS 下载或接口重放前，先确认是否为验证码 / 风控验证接口。
+- 如果用户确认是验证码接口，必须让用户选择“提供从触发到验证的完整流程由 AI 自动取证”或“用户自己完成流程，AI 只捕获”。
+- 用户未选择前，不得开始验证码链路取证。
+
+## 测试 112：用户手动完成验证码流程时必须等待确认
+
+输入场景：用户选择自己完成验证码触发到验证流程，AI 负责抓包和 Trace。
+
+期望：
+
+- 先开启已确认取证工具的网络捕获、Hook 或 RuyiTrace 记录。
+- 明确提示用户完成“触发验证码 → 交互 → 点击验证 / 提交”后回复“已经完成触发到验证流程”。
+- 未收到该回复前，不得停止捕获、不得导入日志并宣称链路完整。
+
+## 测试 113：验证码 RuyiTrace 必须覆盖完整链路
+
+输入场景：取证模式为 ruyiPage + RuyiTrace，目标为验证码接口，但 NDJSON 只包含页面加载阶段，没有交互事件或 verify 接口附近调用栈。
+
+期望：
+
+- 不进入正式补环境。
+- 要求重新采集覆盖触发、展示、交互、验证提交和 verify 接口返回的日志。
+- 阶段报告记录当前 Trace 未覆盖完整验证码流程。
+
+## 测试 114：验证码事件轨迹 fixture 必须可替换且有中文注释
+
+输入场景：验证码加密参数依赖鼠标轨迹，最终 env / signer 代码中需要旧轨迹。
+
+期望：
+
+- 代码提供 `motionTrack` / `eventFixture` / `verifyContext` 等可替换入口。
+- 中文注释说明旧轨迹只用于补环境生成加密参数，后续由 `web-verify-patcher` 替换为识别后的轨迹。
+- 中文注释 UTF-8 正常显示，不出现问号、连续问号或乱码。
+- 不得把旧轨迹硬编码成不可替换逻辑，不得宣称验证码最终验证一定成功。
+
+## 测试 115：调用 web-verify-patcher 前必须检测安装
+
+输入场景：验证码加密参数已经通过补环境生成，下一步需要识别验证码图片、坐标换算、生成轨迹或提交验证分析。
+
+执行：
+
+```bash
+node scripts/check_web_verify_patcher.js --require --markdown
+```
+
+期望：
+
+- 已安装时输出命中目录。
+- 未安装时检查失败，退出码为 `1`，并给出自动安装 / 自行安装指引。
+- 自动安装前必须让用户确认安装目录；克隆 `https://github.com/lwjjike/xbsReverseSkill` 后必须确认存在 `web-verify-patcher/` 目录。若仓库当前分支没有该目录，不得假装安装成功。
+
+## 测试 116：isTrusted 可信输入规则必须前置
+
+输入场景：用户选择 ruyiPage、Camoufox 或 CloakBrowser 自动点击、拖拽、键盘输入、滚动或验证码交互。
+
+期望：
+
+- 在执行交互前读取 `references/trusted-input-and-isTrusted.md`。
+- ruyiPage 优先使用 `page.actions`、`human_move`、`human_click` 或 `drag`；如果必须 JS 构造事件，事件初始化参数必须包含 `ruyi: true`。
+- Camoufox / CloakBrowser 必须从启动开始启用 `humanize` 并使用官方原生输入 / humanize 交互方法。
+- 普通 `dispatchEvent(new MouseEvent(...))`、`new KeyboardEvent(...)`、`page.evaluate(() => dispatchEvent(...))` 不能作为验证码或高风控交互主路径；无法保证可信输入时暂停让用户手动操作、切换工具或明确接受风险。
+
+## 测试 117：addon ABI 不兼容时先询问 Node.js v25.8.1
+
+输入场景：`node scripts/load_native_addon.js --json` 返回 `abiMismatch: true`，或错误信息包含 `NODE_MODULE_VERSION` / `compiled against`。
+
+执行：
+
+```bash
+node scripts/check_node_runtime_compat.js --target addon --markdown
+```
+
+期望：
+
+- 输出 addon 兼容 Node.js 版本 `v25.8.1`、当前 Node、当前 ABI 和 nvm 检测结果。
+- 不得直接降级到 NativeProtect / JS fallback。
+- 必须让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝安装兼容 Node。
+- 用户同意后执行 `nvm install 25.8.1`、`nvm use 25.8.1` 并重新运行 `load_native_addon.js`。
+- 只有用户拒绝或切换后仍失败，才允许 fallback，并在阶段报告、代码变更记忆和最终总结记录。
+
+## 测试 118：isolated-vm ABI 不兼容时先询问 Node.js v26.3.1
+
+输入场景：用户明确选择 `isolated-vm`，但 `node scripts/check_xbs_isolated_vm.js --json` 返回 `status: "abi-mismatch"` 或 `abiMismatch: true`。
+
+执行：
+
+```bash
+node scripts/check_node_runtime_compat.js --target isolated-vm --markdown
+```
+
+期望：
+
+- 输出 xbs isolated-vm 兼容 Node.js 版本 `v26.3.1`、当前 Node、当前 ABI 和 nvm 检测结果。
+- 不得自动退回 npm 原版 `isolated-vm`，不得桥接旧 `addon.node`。
+- 必须让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝安装兼容 Node。
+- 用户同意后执行 `nvm install 26.3.1`、`nvm use 26.3.1` 并重新运行 `check_xbs_isolated_vm.js --strict --json`。
+- 用户拒绝或切换后仍失败时，才允许提供当前 ABI 匹配的魔改 `isolated_vm.node` 构建产物，或改选不使用框架 / vm / jsEnv。

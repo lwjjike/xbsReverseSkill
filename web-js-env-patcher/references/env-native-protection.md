@@ -273,6 +273,21 @@ Object.defineProperty(Navigator.prototype, 'userAgent', {
 });
 ```
 
+## 多通道 toString 与 DataCloneError 保护
+
+高强度检测不会只调用 `fn.toString()`。凡进入补环境范围的函数、构造函数、getter、setter 都要按以下通道验证：
+
+- `fn.toString()`
+- `Function.prototype.toString.call(fn)`
+- 目标 JS 先保存 `const FTS = Function.prototype.toString` 后再 `FTS.call(fn)`
+- `String(fn)`
+- `fn + ""`
+- `fn.toString.toString()`
+- `structuredClone(fn)` 抛出的 `DataCloneError` message / stack
+- `MessagePort.prototype.postMessage(fn)` 抛出的 `DataCloneError` message / stack
+
+用户实测 addon 创建的 native-like 函数对上述多通道 toString 检测没有问题，因此 addon / xbs native-first 仍是第一选择。只有 fallback 到 `NativeProtect` 时，才使用下方带 `structuredClone` / `postMessage` DataCloneError 改写的版本；旧版只 patch `Function.prototype.toString` 的 NativeProtect 不再作为主推荐。
+
 ## `NativeProtect` fallback
 
 addon 不可用、ABI 不兼容或调用失败时，可以在目标 JS 所在运行上下文内使用以下 fallback。必须在加载目标 JS 之前执行。
@@ -281,48 +296,58 @@ addon 不可用、ABI 不兼容或调用失败时，可以在目标 JS 所在运
 class NativeProtect {
     #map = new Map();
     #objMap = new Map();
+    #clonePatched = false;
+
     static #instance = null;
 
     static getInstance() {
         if (!NativeProtect.#instance) {
             NativeProtect.#instance = new NativeProtect();
-            var _toString = Function.prototype.toString;
-            var patchedToString = {
+
+            const instance = NativeProtect.#instance;
+            const _toString = Function.prototype.toString;
+
+            const patchedToString = {
                 toString() {
-                    if (NativeProtect.#instance.#map.has(this)) {
-                        var name = NativeProtect.#instance.#map.get(this);
+                    if (instance.#map.has(this)) {
+                        const name = instance.#map.get(this);
                         return `function ${name || this.name}() { [native code] }`;
-                    } else {
-                        return _toString.call(this);
                     }
+                    return _toString.call(this);
                 }
             }.toString;
+
             Object.defineProperty(Function.prototype, "toString", {
                 value: patchedToString,
                 writable: true,
                 enumerable: false,
                 configurable: true,
-            })
-            this.#instance.#map.set(Function.prototype.toString, "toString");
-            var _objToString = Object.prototype.toString;
-            var patchedObjToString = {
+            });
+
+            instance.#map.set(Function.prototype.toString, "toString");
+
+            const _objToString = Object.prototype.toString;
+            const patchedObjToString = {
                 toString() {
-                    if (NativeProtect.#instance.#objMap.has(this)) {
-                        var name = NativeProtect.#instance.#objMap.get(this);
-                        return `[object ${name}]`
-                    } else {
-                        return _objToString.call(this);
+                    if (instance.#objMap.has(this)) {
+                        const name = instance.#objMap.get(this);
+                        return `[object ${name}]`;
                     }
+                    return _objToString.call(this);
                 }
             }.toString;
+
             Object.defineProperty(Object.prototype, "toString", {
                 value: patchedObjToString,
                 writable: true,
                 enumerable: false,
                 configurable: true,
-            })
-            this.#instance.#map.set(Object.prototype.toString, "toString");
+            });
+
+            instance.#map.set(Object.prototype.toString, "toString");
+            instance.#patchCloneErrorLeak();
         }
+
         return NativeProtect.#instance;
     }
 
@@ -335,8 +360,180 @@ class NativeProtect {
     setNativeFunc(func, name = "") {
         this.#map.set(func, name);
     }
+
     setObjFunc(obj, name = "") {
         this.#objMap.set(obj, name);
+    }
+
+    #patchCloneErrorLeak() {
+        if (this.#clonePatched) return;
+        this.#clonePatched = true;
+
+        const rawStructuredClone = globalThis.structuredClone;
+        const rawMessagePortPostMessage =
+            typeof MessagePort !== "undefined" &&
+            MessagePort.prototype &&
+            MessagePort.prototype.postMessage;
+
+        if (typeof rawStructuredClone === "function") {
+            const self = this;
+
+            function structuredClone(value, options) {
+                try {
+                    return rawStructuredClone.apply(this, arguments);
+                } catch (err) {
+                    self.#rewriteDataCloneError(err, value);
+                }
+            }
+
+            this.#copyFunctionMeta(structuredClone, rawStructuredClone, "structuredClone");
+
+            const desc =
+                Object.getOwnPropertyDescriptor(globalThis, "structuredClone") || {
+                    writable: true,
+                    enumerable: true,
+                    configurable: true,
+                };
+
+            Object.defineProperty(globalThis, "structuredClone", {
+                ...desc,
+                value: structuredClone,
+            });
+
+            this.setNativeFunc(structuredClone, "structuredClone");
+        }
+
+        if (typeof rawMessagePortPostMessage === "function") {
+            const self = this;
+
+            function postMessage(value, transferList) {
+                try {
+                    return rawMessagePortPostMessage.apply(this, arguments);
+                } catch (err) {
+                    self.#rewriteDataCloneError(err, value);
+                }
+            }
+
+            this.#copyFunctionMeta(postMessage, rawMessagePortPostMessage, "postMessage");
+
+            const desc =
+                Object.getOwnPropertyDescriptor(MessagePort.prototype, "postMessage") || {
+                    writable: true,
+                    enumerable: true,
+                    configurable: true,
+                };
+
+            Object.defineProperty(MessagePort.prototype, "postMessage", {
+                ...desc,
+                value: postMessage,
+            });
+
+            this.setNativeFunc(postMessage, "postMessage");
+        }
+    }
+
+    #rewriteDataCloneError(err, value) {
+        if (!err || err.name !== "DataCloneError") {
+            throw err;
+        }
+
+        const fn = this.#findFunction(value);
+        if (!fn) {
+            throw err;
+        }
+
+        const fakeSource = this.#getFunctionSource(fn);
+        const msg = `${fakeSource} could not be cloned.`;
+
+        try {
+            Object.defineProperty(err, "message", {
+                value: msg,
+                configurable: true,
+            });
+        } catch (_) {}
+
+        try {
+            if (typeof err.stack === "string") {
+                const lines = err.stack.split(/\r?\n/);
+                lines[0] = `${err.name}: ${msg}`;
+
+                Object.defineProperty(err, "stack", {
+                    value: lines.join("\n"),
+                    configurable: true,
+                });
+            }
+        } catch (_) {}
+
+        throw err;
+    }
+
+    #getFunctionSource(fn) {
+        try {
+            return Function.prototype.toString.call(fn);
+        } catch (_) {
+            return "function () { [native code] }";
+        }
+    }
+
+    #findFunction(value, seen = new WeakSet()) {
+        if (typeof value === "function") return value;
+        if (value === null || typeof value !== "object") return null;
+        if (seen.has(value)) return null;
+        seen.add(value);
+
+        if (value instanceof Map) {
+            for (const [k, v] of value) {
+                const fk = this.#findFunction(k, seen);
+                if (fk) return fk;
+
+                const fv = this.#findFunction(v, seen);
+                if (fv) return fv;
+            }
+        }
+
+        if (value instanceof Set) {
+            for (const v of value) {
+                const fv = this.#findFunction(v, seen);
+                if (fv) return fv;
+            }
+        }
+
+        for (const key of Reflect.ownKeys(value)) {
+            let desc;
+
+            try {
+                desc = Object.getOwnPropertyDescriptor(value, key);
+            } catch (_) {
+                continue;
+            }
+
+            if (desc && "value" in desc) {
+                const f = this.#findFunction(desc.value, seen);
+                if (f) return f;
+            }
+        }
+
+        return null;
+    }
+
+    #copyFunctionMeta(target, source, name) {
+        try {
+            Object.defineProperty(target, "name", {
+                value: name || source.name,
+                writable: false,
+                enumerable: false,
+                configurable: true,
+            });
+        } catch (_) {}
+
+        try {
+            Object.defineProperty(target, "length", {
+                value: source.length,
+                writable: false,
+                enumerable: false,
+                configurable: true,
+            });
+        } catch (_) {}
     }
 }
 ```
@@ -364,6 +561,7 @@ Object.defineProperty(Storage.prototype, 'getItem', {
 
 - 只在目标 JS 所在运行上下文内 patch，不要污染宿主 Node.js 全局环境；该上下文可以是 `vm`、独立 Node 进程或显式隔离的全局对象。
 - `NativeProtect` 是 fallback，不是第一选择；如果 addon 可加载但源码直接手写函数再 `setNativeFunc`，应回退修改为 addon-first。
+- 使用 `NativeProtect` fallback 时必须使用带 `structuredClone` / `MessagePort.prototype.postMessage` DataCloneError 改写的版本；如果目标会通过 `structuredClone(fn)` 或 `postMessage(fn)` 检测函数源码，旧版 NativeProtect 会暴露非 native 函数。
 - 如果目标 JS 提前保存了原始 `Function.prototype.toString`，后 patch 可能失效。
 - 如果使用 `vm`，要确保 patch 发生在目标 JS 所在 context 内；如果不用 `vm`，要确保入口文件以独立进程 / 隔离 global 初始化并在结束后不污染其他任务。
 

@@ -2,7 +2,7 @@
 
 name: web-js-env-patcher
 
-description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、createNativeCollection/getMimeTypesAndPlugins/jsEnv、通用代码变更记忆、中文注释质量、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、动态 HTML/JS 资源过期识别与运行时刷新、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露与静默失败排查（含 Node 21+ navigator、Storage、performance、fetch/WebSocket 等宿主 Web API 泄露阻断）、Cookie 生成链路、Level 1/2/3 分层、补环境框架选择（默认不使用，可选 isolated-vm/vm/jsEnv）、Trace 复杂度评估但不绑定框架、TLS 指纹兼容请求客户端（CycleTLS/impers/curl-cffi/curl_cffi/cffi_curl/cyCronet）、按推进节点生成中文阶段报告并记录 WebAPI/功能/Bug/指纹/测试/清理增量、最终总结、ruyiPage/RuyiTrace、Camoufox/camoufox-reverse-mcp、CloakBrowser 取证。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
+description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、xbs.dom.createDocument、createNativeCollection/getMimeTypesAndPlugins/jsEnv、通用代码变更记忆、中文注释质量、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、动态 HTML/JS 资源过期识别与运行时刷新、验证码接口确认与触发到验证流程取证、事件轨迹 fixture、web-verify-patcher 交接、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露与静默失败排查（含 Node 21+ navigator、Storage、performance、fetch/WebSocket 等宿主 Web API 泄露阻断）、Cookie 生成链路、Level 1/2/3 分层、补环境框架选择（默认不使用，可选 isolated-vm/vm/jsEnv）、Trace 复杂度评估但不绑定框架、TLS 指纹兼容请求客户端（CycleTLS/impers/curl-cffi/curl_cffi/cffi_curl/cyCronet）、中文阶段报告、最终总结/API回放分类明细、高强度环境行为diff、ruyiPage/RuyiTrace、Camoufox/camoufox-reverse-mcp、CloakBrowser 取证、isTrusted 可信输入规避、addon ABI 不兼容时 nvm + Node v25.8.2 恢复、xbs isolated-vm ABI 不兼容时 nvm + Node v26.3.1 恢复。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
 ---
 
 
@@ -43,7 +43,9 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 - `references/hook-templates.md`：当需要给用户生成浏览器 Hook、XHR/fetch 断点辅助脚本、或解释如何捕获调用栈时读取。
 
-- `references/browser-acquisition.md`：每次开始新的网页端补环境任务时读取，用于在任何取证动作前让用户选择取证模式；当需要浏览器交互、目标站存在自动化/CDP 检测、用户提到 ruyiPage、RuyiTrace、Camoufox、camoufox-reverse-mcp、CloakBrowser，或出现登录/验证码/MFA 时也读取；其中包含 Camoufox / camoufox-reverse-mcp、CloakBrowser 安装检测、官方启动入口和反自动化/CDP/指纹启动硬约束。
+- `references/browser-acquisition.md`：每次开始新的网页端补环境任务时读取，用于在任何取证动作前让用户选择取证模式；当需要浏览器交互、目标站存在自动化/CDP/isTrusted 检测、用户提到 ruyiPage、RuyiTrace、Camoufox、camoufox-reverse-mcp、CloakBrowser，或出现登录/验证码/MFA 时也读取；其中包含 Camoufox / camoufox-reverse-mcp、CloakBrowser 安装检测、官方启动入口和反自动化/CDP/指纹启动硬约束。
+
+- `references/trusted-input-and-isTrusted.md`：当取证阶段需要自动点击、鼠标移动、拖拽、键盘输入、滚动、验证码交互，或目标可能检测 `event.isTrusted` 时读取；ruyiPage 必须优先 native BiDi / human actions，必要 JS 事件使用 `ruyi: true`；Camoufox / CloakBrowser 必须使用 humanize / 原生输入路径，不得把普通 `dispatchEvent` 作为主路径。
 
 - `references/ruyi-tooling.md`：当用户选择或询问 ruyiPage / RuyiTrace、需要检测安装、安装指导、下载工具、采集或导入 RuyiTrace NDJSON 日志时读取；如果取证模式为 ruyiPage + RuyiTrace，补环境或环境异常排查时也必须读取，用于优先从 NDJSON 日志定位环境依赖。
 
@@ -51,17 +53,20 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 - `references/env-debug-loop.md`：当前置材料已确认，准备在 Node.js 中运行目标 JS、追踪缺失环境、生成 `env.js` / `runner.js` 骨架时读取。
 
-- `references/runtime-frameworks.md`：每次进入正式 Node.js 补环境阶段前读取，用于提醒用户选择是否使用补环境框架（默认不使用，可选 xbs isolated-vm / vm / jsEnv）；当存在 RuyiTrace / Node trace 日志时也读取，用于基于 Trace 评估项目复杂度、风险点和补环境优先级，但复杂度评估不得自动决定补环境框架选择；用户选择 isolated-vm 时必须使用随包魔改 xbs isolated-vm 并自检 `window.xbs`，用户选择 jsEnv 时必须先确认其项目路径、安装方式和入口文档，不得虚构 API。
+- `references/runtime-frameworks.md`：每次进入正式 Node.js 补环境阶段前读取，用于提醒用户选择是否使用补环境框架（默认不使用，可选 xbs isolated-vm / vm / jsEnv）；当存在 RuyiTrace / Node trace 日志时也读取，用于基于 Trace 评估项目复杂度、风险点和补环境优先级，但复杂度评估不得自动决定补环境框架选择；用户选择 isolated-vm 时必须使用随包魔改 xbs isolated-vm 并自检 `window.xbs` 17 个核心 API、`xbs.dom.createDocument` 和 DOM smoke test，用户选择 jsEnv 时必须先确认其项目路径、安装方式和入口文档，不得虚构 API。
 
 - `references/env-object-model.md`：当需要补 `window`、`document`、`navigator`、`location`、`Storage`、`crypto`、`performance`、`fetch`、`XMLHttpRequest` 等对象模型时读取；该文件只决定“补哪些对象”，不降低对象真实性要求，已补对象必须默认遵循 addon-first、构造函数 / 原型链 / 实例工厂、属性描述符、访问器、`Symbol.toStringTag`、非法构造行为和 native-like 保护。
 
 - `references/env-native-protection.md`：每次进入 Node.js 补环境阶段或准备编写 / 修改 env 模块时读取；toString、属性描述符、原型链、访问器、实例对象 toString 与 addon-first 不是等检测到才做，而是默认硬性基线，除非用户明确要求不保护或不使用 addon。
 - `references/addon-api.md`：每次进入补环境阶段、使用 `addon.node` 或 xbs native API、修改 `native-protect.js` / addon helper、处理 `createProtoChains` / `createNativeObject` / `createNativeCollection` / `createInterceptor` / `createUndetectable` / `getMimeTypesAndPlugins` / `getPrivate` / `setPrivate` / `hasPrivate` / `deletePrivate` / 注册表管理 API 时读取；新代码优先新版 API，禁止把旧式 `createProtoChains(name, chain)` 或 `createNativeObject(tag, proto, properties)` 写成主路径；`navigator.plugins` / `navigator.mimeTypes` 必须优先使用 `getMimeTypesAndPlugins(config)`。
-- `references/xbs-isolated-vm-api.md`：当用户选择 `isolated-vm` 补环境框架、运行 `scripts/check_xbs_isolated_vm.js`、或在 isolated-vm Context 内编写 WebAPI 补环境代码时读取；该模式必须使用随包魔改 xbs isolated-vm，优先通过 `window.xbs` / `globalThis.xbs` 创建构造函数、访问器、集合对象、plugins/mimeTypes、`document.all` 和私有状态，不要桥接旧 `addon.node`。
+- `references/node-version-recovery.md`：当 addon.node 或随包魔改 xbs isolated-vm 因 Node ABI 不兼容加载失败时读取；addon 兼容 Node.js v25.8.2，xbs isolated-vm 兼容 Node.js v26.3.1，必须先检测 nvm 并征得用户同意是否安装 / 切换兼容 Node，用户拒绝后才允许 fallback、提供匹配构建产物或改选框架。
+- `references/xbs-isolated-vm-api.md`：当用户选择 `isolated-vm` 补环境框架、运行 `scripts/check_xbs_isolated_vm.js`、或在 isolated-vm Context 内编写 WebAPI 补环境代码时读取；该模式必须使用随包魔改 xbs isolated-vm，优先通过 `window.xbs` / `globalThis.xbs` 创建构造函数、访问器、集合对象、plugins/mimeTypes、`document.all`、私有状态，并通过 `xbs.dom.createDocument(options)` 创建基础 DOM；不要桥接旧 `addon.node`。
 - `references/code-change-memory.md`：复杂 case、修改 `case/result/` 源码、反复修同一文件 / 函数、或任何关键工程逻辑存在回退风险时读取；默认维护 `case/notes/代码变更记忆.md`，记录改了什么、为什么改、已失败尝试、禁止回退、验证范围和遗留风险。
-- `references/code-style.md`：每次生成、重构或交付 `case/result/` 补环境代码前读取；用于约束最终代码简洁、模块化、可读、有中文注释、UTF-8 无乱码、中文注释不出现问号，并要求运行 `scripts/check_code_quality.js` 与 `scripts/check_webapi_addon_coverage.js`。
+- `references/code-style.md`：每次生成、重构或交付 `case/result/` 补环境代码前读取；用于约束最终代码简洁、模块化、可读、有中文注释、UTF-8 无乱码、中文注释不出现问号，并要求运行 `scripts/check_code_quality.js` 与 `scripts/check_webapi_addon_coverage.js`；选择 isolated-vm 时补环境源码也必须按 `navigator.js` / `document.js` / `window.js` / `canvas.js` / `webgl.js` 等真实文件拆分，不得以大段 `String.raw` / `*_SCRIPT` 字符串作为主要交付形态。
 
 - `references/fingerprint-value-replay.md`：当目标 JS 访问 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API，或 Node.js 第三方库模拟结果与真实浏览器不一致时读取；用于真实浏览器采样、终端 API 值回放、禁止最终流程退回自动化。
+
+- `references/high-intensity-env-diff.md`：当目标疑似 Shape / F5 / Akamai / DataDome / Kasada / reese84 / bx-* 等高强度浏览器完整性检测，或出现异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链 walk、brand check、MutationObserver、userAgentData、window.chrome、canPlayType、mediaSession、Header / Client Hints 一致性、动态风控 JS 多版本回归等问题时读取；用于真实浏览器基线与 Node 补环境行为 diff、高强度检测覆盖矩阵和最终总结记录，但仍不得主动分析 JSVMP 源码。
 
 - `references/node-leakage-and-silent-failure.md`：当进入 Node.js 运行、输出不一致、怀疑 Node 泄露、SDK init 缺参、时间随机或存储差异时读取；补环境前必须读取，用于阻断 `process/Buffer/require/module/global` 以及 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ `localStorage/sessionStorage`、`performance.nodeTiming/eventLoopUtilization/timerify`、宿主 `fetch/WebSocket`、`URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等 Web API 兼容层泄露。
 
@@ -70,6 +75,8 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 - `references/fixture-validation.md`：当需要用浏览器真实样本验证 Node.js 输出、设计 fixtures、对比多组样本时读取。
 
 - `references/dynamic-resource-freshness.md`：当下载或保存 HTML、JS bundle、动态 chunk、challenge JS、首访页面、403/风控页面或任何可能过期的资源时读取；用于判定资源是否动态、写入 `resource-manifest.json`、区分分析快照与最终运行时刷新资源，并防止最终项目固定使用过期 HTML / JS。
+
+- `references/captcha-flow-and-verify-handoff.md`：用户信息完整后、任何取证动作前必须读取并确认目标是否为验证码 / 风控验证 / challenge / WAF 接口；当需要从触发到验证采集网络、Hook、RuyiTrace 日志、事件轨迹 fixture，或在补环境生成验证码接口加密参数后交接 `web-verify-patcher` 做识别 / 轨迹 / 验证分析时也读取。
 
 - `references/wasm-worker-postmessage.md`：当发现 Worker、WASM、iframe、postMessage 或异步消息链时读取。
 
@@ -87,7 +94,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 - `references/stage-markdown-reports.md`：每个高难度、多轮对话或需要沉淀阶段结论的 case 从前置阶段开始读取；用于默认生成 `case/阶段报告/01-需求信息确认.md` 等中文命名 UTF-8 Markdown 阶段报告，并在每个合适推进节点记录项目进展、修改文件、新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、真实性保护、测试结果、清理状态、风险和下一步计划。
 
-- `references/final-project-summary.md`：项目完成后或准备最终交付时必须读取并生成 `result/最终项目总结.md`；最终总结是默认硬性产物，除非用户明确要求不生成。报告文件名必须为中文，必须用 UTF-8 写入，必须包含 native addon / NativeProtect 使用情况；RuyiTrace 章节仅在用户选择 ruyiPage + RuyiTrace 或提供 RuyiTrace NDJSON 时保留。
+- `references/final-project-summary.md`：项目完成后或准备最终交付时必须读取并生成 `result/最终项目总结.md`；最终总结是默认硬性产物，除非用户明确要求不生成。报告文件名必须为中文，必须用 UTF-8 写入，必须包含 native addon / NativeProtect 使用情况、按类别分组的“环境与指纹 API 调用回放明细”（例如 navigator、document、window、canvas、webgl 等分类）和“高强度环境检测覆盖矩阵”；RuyiTrace 章节仅在用户选择 ruyiPage + RuyiTrace 或提供 RuyiTrace NDJSON 时保留。
 
 - `references/cleanup.md`：当创建 case 目录、临时文件、HAR、浏览器 Profile、hook 脚本、trace 或日志时读取。
 
@@ -99,7 +106,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 第一回复至少包含：
 
 - 已识别信息：目标网站 / 页面 / API / 方法 / cURL 样本 / 已知现象 / 已知旧代码文件。
-- 缺失或待确认信息：取证模式、最终请求 TLS 客户端、授权测试范围、是否需要登录、目标加密参数列表、参数位置、是否允许创建 case 与阶段报告。
+- 缺失或待确认信息：取证模式、最终请求 TLS 客户端、授权测试范围、是否需要登录、是否验证码 / 风控验证接口、目标加密参数列表、参数位置、是否允许创建 case 与阶段报告。
 - 从 cURL / HAR 中初步发现的可疑参数候选：只列候选与位置，不进入正式分析；必须让用户确认本次分析哪些参数。
 - 明确声明：用户确认前不会开始取证、补环境、运行旧代码或发送真实请求。
 
@@ -114,75 +121,80 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 4. **最终请求 TLS 客户端先确认**：如果本 case 最终需要发送真实请求或交付 `final.js` / `final.py`，在前置阶段就让用户选择 TLS 指纹兼容请求客户端：Node.js CycleTLS、Node.js impers、Python curl_cffi / cffi_curl、Python cyCronet，或明确选择“不发真实请求，只输出本地 sign / 参数”。不要等普通 fetch / requests 失败后才临时考虑 TLS 指纹兼容；最终真实请求必须限制为少量授权验证，不得用于批量访问或绕过登录、验证码、MFA、访问控制。
 
-5. **信息完整性检查**：确认用户至少提供：目标网站或目标页面 URL、目标接口 API URL、请求方法、目标加密参数名、参数位置、至少一份成功请求样本、取证模式、最终请求 TLS 指纹兼容客户端或“不发真实请求”选择。
+5. **信息完整性检查**：确认用户至少提供：目标网站或目标页面 URL、目标接口 API URL、请求方法、目标加密参数名、参数位置、至少一份成功请求样本、取证模式、最终请求 TLS 指纹兼容客户端或“不发真实请求”选择，并在信息完整后确认是否属于验证码 / 风控验证接口。
 
 6. **信息不完整时**：不要开始逆向分析或补环境代码。列出缺失项，并让用户按模板补充。
 
-7. **信息完整时**：先整理任务确认信息，让用户确认后再继续。确认内容必须包含网站 URL、API、方法、参数名、参数位置、请求样本、响应样本、已知 JS 文件、是否需要登录、取证模式、最终请求 TLS 指纹兼容客户端。
+7. **信息完整时**：先整理任务确认信息，让用户确认后再继续。确认内容必须包含网站 URL、API、方法、参数名、参数位置、请求样本、响应样本、已知 JS 文件、是否需要登录、是否验证码 / 风控验证接口、取证模式、最终请求 TLS 指纹兼容客户端。
 
 8. **阶段报告默认生成**：从需求信息确认阶段开始，默认读取 `references/stage-markdown-reports.md` 并生成中文命名阶段报告；即使信息不完整，也要写入 `case/阶段报告/01-需求信息确认.md`，记录已提供信息、缺失项、阻塞点和下一步需要用户确认的问题。后续不要只按固定编号机械生成，而要在每个合适推进节点结束后立即写入或更新阶段报告，例如取证方案确认、请求样本与可疑参数确认、JS 文件与入口定位、补环境前置分析、补环境实现、测试清理、WebAPI 补齐、指纹回放、Bug 修复、addon 接口更新、通用代码变更记忆更新等。阶段报告内容必须包含当前进展、修改文件、新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、真实性保护变化、测试结果、清理状态、风险和下一步计划；除非用户明确要求不生成阶段报告，否则不得只在最后生成一个总结文件。
 
-9. **先做前置验证**：在写 `env.js` 或正式补环境代码之前，先确认请求样本中确实存在目标加密参数，并确认相关 JS 文件可以获取。
+9. **验证码接口确认门禁**：用户信息完整并确认任务后，在启动任何浏览器取证、RuyiTrace 捕获、Hook、断点、截图、JS 下载、动态资源保存或接口重放前，必须先读取 `references/captcha-flow-and-verify-handoff.md`，确认目标 API / 参数是否属于验证码 / 风控验证 / challenge / WAF 人机验证接口。若是，必须让用户选择：提供从触发到验证的完整流程由 AI 按已确认取证工具自动取证，或用户自行完成触发到验证流程、AI 只负责提前开启抓包 / Hook / Trace 并等待用户回复“已经完成触发到验证流程”。RuyiTrace 日志也必须覆盖触发、展示、交互、验证提交和 verify 接口返回完整时间段；未覆盖时不得进入补环境。
 
-10. **可疑加密参数必须先全量列出并让用户确认**：解析 cURL / HAR / 请求样本时，必须列出所有可疑加密参数（Query / Header / Body / Cookie 中的 sign、token、a_bogus、h5st、x-s、x-t、mtgsig、w_rid 等以及其他高熵动态字段），即使用户已经指定了某个参数，也要提示是否还有其他参数需要一并分析。用户未确认“本次要分析哪些参数”前，不得进入正式补环境阶段。
+10. **先做前置验证**：在写 `env.js` 或正式补环境代码之前，先确认请求样本中确实存在目标加密参数，并确认相关 JS 文件可以获取。
 
-11. **Cookie 过期先分类**：遇到 Cookie/token 无效、过期或请求因 Cookie 失败时，先判断它是否属于登录态 / 账号授权；对不需要登录或与登录无关的设备 Cookie、风控 Cookie、首访 Cookie、JS 生成 Cookie，必须分析生成或刷新链路并纳入 `source → entry → builder → writer`，不要默认要求用户重新提供一份新 Cookie。
+11. **可疑加密参数必须先全量列出并让用户确认**：解析 cURL / HAR / 请求样本时，必须列出所有可疑加密参数（Query / Header / Body / Cookie 中的 sign、token、a_bogus、h5st、x-s、x-t、mtgsig、w_rid 等以及其他高熵动态字段），即使用户已经指定了某个参数，也要提示是否还有其他参数需要一并分析。用户未确认“本次要分析哪些参数”前，不得进入正式补环境阶段。
 
-12. **加密链路必须四层化**：入口定位输出必须包含 `source → entry → builder → writer`。只找到疑似函数但没确认 writer 时，不视为完成定位。
+12. **Cookie 过期先分类**：遇到 Cookie/token 无效、过期或请求因 Cookie 失败时，先判断它是否属于登录态 / 账号授权；对不需要登录或与登录无关的设备 Cookie、风控 Cookie、首访 Cookie、JS 生成 Cookie，必须分析生成或刷新链路并纳入 `source → entry → builder → writer`，不要默认要求用户重新提供一份新 Cookie。
 
-13. **动态 HTML / JS 不得固定化**：下载到本地的 HTML、JS bundle、动态 chunk、challenge JS、403/风控页面和内联脚本默认先视为分析快照，不得直接作为最终产物的长期依赖。收集每个资源时必须记录 URL、请求时间、响应头、状态码、Set-Cookie、body sha256、Cache-Control / Expires / ETag / Last-Modified、依赖 Cookie / seed / nonce、是否动态、是否允许进入最终产物，并写入 `case/notes/resource-manifest.json`。检测到 `no-store`、`no-cache`、短 TTL、随机 query、每次 hash 变化、页面内 seed / nonce / challenge、会话绑定 Cookie 或 403 生成脚本时，最终入口必须运行时重新获取当前有效 HTML / JS / seed / challenge，再加载当前资源生成参数；旧文件只能用于分析和 fixture 对比。不得把 `case/js/snapshots/` 或动态资源文件固定复制进 `result/` 作为 signer 主路径。
+13. **加密链路必须四层化**：入口定位输出必须包含 `source → entry → builder → writer`。只找到疑似函数但没确认 writer 时，不视为完成定位。
 
-14. **Hook 优先，断点兜底**：授权调试中先用用户已确认的取证模式执行最小 Hook 捕获 fetch/XHR/Header/Query/Body/Cookie 写入，再用对应工具的断点或日志能力确认源码位置和调用栈。
+14. **动态 HTML / JS 不得固定化**：下载到本地的 HTML、JS bundle、动态 chunk、challenge JS、403/风控页面和内联脚本默认先视为分析快照，不得直接作为最终产物的长期依赖。收集每个资源时必须记录 URL、请求时间、响应头、状态码、Set-Cookie、body sha256、Cache-Control / Expires / ETag / Last-Modified、依赖 Cookie / seed / nonce、是否动态、是否允许进入最终产物，并写入 `case/notes/resource-manifest.json`。检测到 `no-store`、`no-cache`、短 TTL、随机 query、每次 hash 变化、页面内 seed / nonce / challenge、会话绑定 Cookie 或 403 生成脚本时，最终入口必须运行时重新获取当前有效 HTML / JS / seed / challenge，再加载当前资源生成参数；旧文件只能用于分析和 fixture 对比。不得把 `case/js/snapshots/` 或动态资源文件固定复制进 `result/` 作为 signer 主路径。
 
-15. **ruyiPage 强校验**：选择 ruyiPage 或 ruyiPage + RuyiTrace 时，必须先验证其使用 ruyiPage 定制 Firefox runtime；只检测到系统 Firefox fallback 时不视为通过，需暂停并询问用户是否已安装定制 Firefox 或提供安装目录。正式取证必须从第一次打开页面开始就使用有头模式、专用临时 Profile、`smart_fingerprint()`、`ctx.apply_emulation(page)`、一致的地理/时区/语言/窗口参数，并在导航后自检 `navigator.webdriver === false`；任一约束失败时不要继续取证。
+15. **Hook 优先，断点兜底**：授权调试中先用用户已确认的取证模式执行最小 Hook 捕获 fetch/XHR/Header/Query/Body/Cookie 写入，再用对应工具的断点或日志能力确认源码位置和调用栈。
 
-16. **RuyiTrace 自动捕获优先，未安装不自动降级**：如果用户已选择 ruyiPage + RuyiTrace，先检测 RuyiTrace 安装与 `firefox/` 定制 trace 内核完整性。检测通过且用户未明确要求手动取证时，必须优先运行 `scripts/capture_ruyitrace_log.js` 或等价方式自动启动随 RuyiTrace 提供的 trace Firefox 捕获 NDJSON，并在捕获后导入日志；不要默认等待用户手动点击 RuyiTrace GUI 或手动提供日志。只有自动捕获失败、需要登录 / 验证码 / MFA / 权限交互、目标路径未覆盖、工具 GUI/内核不可控、或用户明确选择手动取证时，才暂停让用户手动协助采集。若检测到 RuyiTrace 未安装或目录不完整，必须暂停并提示用户二选一：安装 / 提供 RuyiTrace 路径，或明确确认降级为“仅 ruyiPage”。用户选择安装时，先输出下载 / 安装计划，等待用户安装并确认 `RuyiTrace.exe` 可打开且 `firefox/` 定制内核完整后再继续；在用户确认前不得继续需要 RuyiTrace NDJSON 的补环境流程。
+16. **ruyiPage 强校验**：选择 ruyiPage 或 ruyiPage + RuyiTrace 时，必须先验证其使用 ruyiPage 定制 Firefox runtime；只检测到系统 Firefox fallback 时不视为通过，需暂停并询问用户是否已安装定制 Firefox 或提供安装目录。正式取证必须从第一次打开页面开始就使用有头模式、专用临时 Profile、`smart_fingerprint()`、`ctx.apply_emulation(page)`、一致的地理/时区/语言/窗口参数，并在导航后自检 `navigator.webdriver === false`；任一约束失败时不要继续取证。
 
-17. **Camoufox 安装与启动强校验**：如果用户选择 Camoufox 或 Camoufox + camoufox-reverse-mcp，必须在启动任何浏览器前运行 `scripts/check_external_tools.js --require-camoufox --markdown`；选择 MCP 时必须加 `--require-camoufox-mcp`，必要时加 `--python`、`--camoufox-install-dir` 或 `--camoufox-mcp-project-dir`。未检测到 Camoufox Python 包、未执行 `python -m camoufox fetch` 下载浏览器本体、或 MCP 不可导入时暂停：已安装则要求用户提供 Python 解释器 / venv、Camoufox 缓存目录、浏览器路径或 MCP 项目目录；未安装则引导用户确认安装目录和安装方式。正式取证必须从第一次打开目标页开始使用 Camoufox 官方入口或 camoufox-reverse-mcp，默认有头、`humanize:true`，代理场景按授权启用 `geoip:true` / `block_webrtc:true`，不得先用普通 Playwright / Puppeteer / 系统浏览器探测。
+17. **RuyiTrace 自动捕获优先，未安装不自动降级**：如果用户已选择 ruyiPage + RuyiTrace，先检测 RuyiTrace 安装与 `firefox/` 定制 trace 内核完整性。检测通过且用户未明确要求手动取证时，必须优先运行 `scripts/capture_ruyitrace_log.js` 或等价方式自动启动随 RuyiTrace 提供的 trace Firefox 捕获 NDJSON，并在捕获后导入日志；不要默认等待用户手动点击 RuyiTrace GUI 或手动提供日志。只有自动捕获失败、需要登录 / 验证码 / MFA / 权限交互、目标路径未覆盖、工具 GUI/内核不可控、或用户明确选择手动取证时，才暂停让用户手动协助采集。若检测到 RuyiTrace 未安装或目录不完整，必须暂停并提示用户二选一：安装 / 提供 RuyiTrace 路径，或明确确认降级为“仅 ruyiPage”。用户选择安装时，先输出下载 / 安装计划，等待用户安装并确认 `RuyiTrace.exe` 可打开且 `firefox/` 定制内核完整后再继续；在用户确认前不得继续需要 RuyiTrace NDJSON 的补环境流程。
 
-18. **CloakBrowser 安装与启动强校验**：如果用户选择 CloakBrowser，必须在启动任何浏览器前运行 `scripts/check_external_tools.js --require-cloakbrowser --markdown`，必要时加 `--cloakbrowser-project-dir`、`--cloakbrowser-binary-path` 或 `--python`。未检测到包或 stealth Chromium 二进制时暂停：已安装则要求用户提供 Python 解释器、Node 项目目录或二进制路径；未安装则引导用户确认 Python / Node.js 安装路线并等待安装。正式取证必须从第一次打开目标页开始使用官方 `cloakbrowser` 包装器，默认 `headless:false`、`humanize:true`，不得先用普通 Playwright / Puppeteer / 系统浏览器探测，也不得直接 `chromium.launch()`。
+18. **Camoufox 安装与启动强校验**：如果用户选择 Camoufox 或 Camoufox + camoufox-reverse-mcp，必须在启动任何浏览器前运行 `scripts/check_external_tools.js --require-camoufox --markdown`；选择 MCP 时必须加 `--require-camoufox-mcp`，必要时加 `--python`、`--camoufox-install-dir` 或 `--camoufox-mcp-project-dir`。未检测到 Camoufox Python 包、未执行 `python -m camoufox fetch` 下载浏览器本体、或 MCP 不可导入时暂停：已安装则要求用户提供 Python 解释器 / venv、Camoufox 缓存目录、浏览器路径或 MCP 项目目录；未安装则引导用户确认安装目录和安装方式。正式取证必须从第一次打开目标页开始使用 Camoufox 官方入口或 camoufox-reverse-mcp，默认有头、`humanize:true`，代理场景按授权启用 `geoip:true` / `block_webrtc:true`，不得先用普通 Playwright / Puppeteer / 系统浏览器探测。
 
-19. **登录策略**：绝不索要账号、密码、验证码或 MFA 密钥。需要登录时暂停，让用户在所选取证工具或用户手动浏览器中完成登录；只有用户回复 `已经登录成功` 并确认登录后流程后，才继续。
+19. **CloakBrowser 安装与启动强校验**：如果用户选择 CloakBrowser，必须在启动任何浏览器前运行 `scripts/check_external_tools.js --require-cloakbrowser --markdown`，必要时加 `--cloakbrowser-project-dir`、`--cloakbrowser-binary-path` 或 `--python`。未检测到包或 stealth Chromium 二进制时暂停：已安装则要求用户提供 Python 解释器、Node 项目目录或二进制路径；未安装则引导用户确认 Python / Node.js 安装路线并等待安装。正式取证必须从第一次打开目标页开始使用官方 `cloakbrowser` 包装器，默认 `headless:false`、`humanize:true`，不得先用普通 Playwright / Puppeteer / 系统浏览器探测，也不得直接 `chromium.launch()`。
 
-20. **进入补环境阶段前再次确认**：只有在参数、入口、JS 文件、样本、取证模式和最终请求客户端都已确认后，才进入 Node.js 缺失环境追踪和补环境代码阶段。
+20. **isTrusted 可信输入硬约束**：如果取证阶段需要自动执行点击、鼠标移动、拖拽、键盘输入、滚动或验证码交互，必须先读取 `references/trusted-input-and-isTrusted.md`。ruyiPage 优先使用 `page.actions` / `human_move` / `human_click` / `drag` 等 native BiDi 或拟人动作；确实需要 JS 构造事件时必须使用 `ruyi: true`。Camoufox / CloakBrowser 必须从启动开始启用 `humanize` 并使用官方原生输入 / humanize 交互方法；不得把普通 `page.evaluate(() => dispatchEvent(...))`、`new MouseEvent(...)`、`new KeyboardEvent(...)` 作为高风控或验证码交互主路径。无法保证可信输入时暂停，让用户选择手动操作、切换工具或明确接受风险。
 
-21. **补环境框架由用户选择**：进入正式 Node.js 补环境前必须读取 `references/runtime-frameworks.md`，提醒用户选择是否使用补环境框架：不使用补环境框架（默认）、`isolated-vm`（随包魔改 xbs isolated-vm）、Node.js 内置 `vm`、`jsEnv`。用户未明确选择时，必须按“不使用补环境框架”继续；不得因为模型推断、项目看起来复杂或 Trace 复杂度高就自动启用框架。用户选择 `isolated-vm` 时先运行 `scripts/check_xbs_isolated_vm.js --markdown` 检测随包魔改二进制、Node ABI、平台和 Context 内 `window.xbs` 17 个 API；平台缺失或 ABI 不兼容时暂停，要求用户提供匹配魔改构建产物或改选，不得自动安装 / 降级 npm 原版 `isolated-vm`，也不得桥接旧 `addon.node`。用户选择 `vm` 时说明它是轻量隔离且弱于 `isolated-vm`；用户选择 `jsEnv` 时先要求用户提供 jsEnv 项目路径、安装方式、入口文件和使用文档，并检测可用性，未确认前不得虚构 jsEnv API 或复制 jsEnv runtime。最终项目只能保留用户选择的 runtime，未选择框架时不得混入 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖。
+21. **登录策略**：绝不索要账号、密码、验证码或 MFA 密钥。需要登录时暂停，让用户在所选取证工具或用户手动浏览器中完成登录；只有用户回复 `已经登录成功` 并确认登录后流程后，才继续。
 
-22. **Trace 复杂度评估与框架选择解耦**：如果存在 RuyiTrace NDJSON、Node trace、`missing-env.json` 或其他环境访问日志，进入补环境阶段前或阶段推进时应运行 `scripts/analyze_trace_complexity.js --case-dir case --markdown` 或等价分析，输出 WebAPI 类别、真实性检测、指纹、异步、状态依赖和调用栈分散度，写入阶段报告。复杂度评估只用于补环境范围、风险点和优先级，不得自动决定是否使用 `isolated-vm` / `vm` / `jsEnv`；即使复杂度高也必须以用户框架选择为准。没有 Trace 时记录“无法基于 Trace 评估复杂度”。
+22. **进入补环境阶段前再次确认**：只有在参数、入口、JS 文件、样本、取证模式和最终请求客户端都已确认后，才进入 Node.js 缺失环境追踪和补环境代码阶段。
 
-23. **普通上下文无法继续时再次征询框架选择**：如果用户默认未使用框架，但后续遇到普通上下文难以解决的 Node 泄露、Realm / intrinsic 差异、`Function("return this")()`、`constructor.constructor`、全局对象污染或多 fixture 互相影响等环境检测问题，必须暂停并再次提醒用户可选择 `isolated-vm`、`vm`、`jsEnv` 或继续不使用框架；不得擅自切换。
+23. **补环境框架由用户选择**：进入正式 Node.js 补环境前必须读取 `references/runtime-frameworks.md`，提醒用户选择是否使用补环境框架：不使用补环境框架（默认）、`isolated-vm`（随包魔改 xbs isolated-vm）、Node.js 内置 `vm`、`jsEnv`。用户未明确选择时，必须按“不使用补环境框架”继续；不得因为模型推断、项目看起来复杂或 Trace 复杂度高就自动启用框架。用户选择 `isolated-vm` 时先运行 `scripts/check_xbs_isolated_vm.js --markdown` 检测随包魔改二进制、Node ABI、平台、Context 内 `window.xbs` 17 个核心 API、`xbs.dom.createDocument` 与 DOM smoke test；如出现 ABI 不兼容，先读取 `references/node-version-recovery.md` 并提示兼容 Node.js 版本为 v26.3.1，检测 nvm 后让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝切换 Node；用户同意后用 nvm 安装 / 切换 v26.3.1 并重新自检。只有用户拒绝切换或切换后仍失败时，才要求用户提供匹配魔改构建产物或改选框架；不得自动安装 / 降级 npm 原版 `isolated-vm`，也不得桥接旧 `addon.node`。用户选择 `vm` 时说明它是轻量隔离且弱于 `isolated-vm`；用户选择 `jsEnv` 时先要求用户提供 jsEnv 项目路径、安装方式、入口文件和使用文档，并检测可用性，未确认前不得虚构 jsEnv API 或复制 jsEnv runtime。最终项目只能保留用户选择的 runtime，未选择框架时不得混入 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖。
 
-24. **RuyiTrace 优先诊断与长字段截断保护**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/missing-env-priority.md` 后再补环境。RuyiTrace 中达到或接近 4000 字符的字符串字段必须视为疑似截断：只能记录可见长度、最小长度和 hash，真实长度写 `unknown`，不得把 4000 或可见长度当成加密参数真实长度；需要完整值时必须通过 HAR/cURL、ruyiPage 网络抓包、专用 Hook 分片落盘或最终 signer 输出补采。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`。
+24. **Trace 复杂度评估与框架选择解耦**：如果存在 RuyiTrace NDJSON、Node trace、`missing-env.json` 或其他环境访问日志，进入补环境阶段前或阶段推进时应运行 `scripts/analyze_trace_complexity.js --case-dir case --markdown` 或等价分析，输出 WebAPI 类别、真实性检测、指纹、异步、状态依赖和调用栈分散度，写入阶段报告。复杂度评估只用于补环境范围、风险点和优先级，不得自动决定是否使用 `isolated-vm` / `vm` / `jsEnv`；即使复杂度高也必须以用户框架选择为准。没有 Trace 时记录“无法基于 Trace 评估复杂度”。
 
-25. **指纹值回放优先**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等浏览器指纹时，不要在 Node.js 中强行复刻渲染管线，也不要因 node-canvas / headless-gl / jsdom 等结果不一致而建议最终改用浏览器自动化；应先用已确认取证模式采集真实浏览器终端 API 返回值、调用参数和调用栈，再在 Node.js 交付环境中按调用特征回放。缺少指纹样本时必须阻塞并提示补采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
+25. **普通上下文无法继续时再次征询框架选择**：如果用户默认未使用框架，但后续遇到普通上下文难以解决的 Node 泄露、Realm / intrinsic 差异、`Function("return this")()`、`constructor.constructor`、全局对象污染或多 fixture 互相影响等环境检测问题，必须暂停并再次提醒用户可选择 `isolated-vm`、`vm`、`jsEnv` 或继续不使用框架；不得擅自切换。
 
-26. **Node 泄露先阻断**：正式运行目标 JS 前先确认目标 JS 所在运行上下文不暴露 `process/Buffer/require/module/exports/global/__dirname/__filename/setImmediate/clearImmediate` 等 Node 能力，也不得直接复用宿主 Node Web API 兼容层。按 Node 官方文档，`navigator` 是 Node 21+ 全局对象，不是 Node 20 官方新增；检测到宿主 `navigator` 时必须先删除或隔离，再安装浏览器式 `Navigator`；`navigator.userAgent` 不得为 `Node.js/<major>`，不得暴露 Node 来源的 `navigator.locks`。检测到 Node 22.4+ 宿主 `localStorage/sessionStorage`、宿主 `performance.nodeTiming/eventLoopUtilization/timerify/markResourceTiming`、宿主 `fetch/WebSocket/BroadcastChannel/MessageChannel` 时，必须删除、隔离或用浏览器样本覆盖。`URL/TextEncoder/Streams/Events/crypto/WebAssembly/queueMicrotask` 等浏览器同名 API 如果参与检测，也必须按浏览器样本或可控实现安装，不能盲目透传 Node 宿主构造器。可使用用户已确认的补环境框架、独立 Node 进程或显式隔离全局对象，但不因 Node 泄露阻断自动切换到 `vm` / `isolated-vm`，并执行六项纯计算预检或说明跳过原因。
+26. **RuyiTrace 优先诊断与长字段截断保护**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/missing-env-priority.md` 后再补环境。RuyiTrace 中达到或接近 4000 字符的字符串字段必须视为疑似截断：只能记录可见长度、最小长度和 hash，真实长度写 `unknown`，不得把 4000 或可见长度当成加密参数真实长度；需要完整值时必须通过 HAR/cURL、ruyiPage 网络抓包、专用 Hook 分片落盘或最终 signer 输出补采。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`。
 
-27. **补环境初始化即 addon-first / xbs native-first**：进入 Node.js 补环境阶段的第一步就必须检测 native 能力：普通 Node runtime 运行 `scripts/load_native_addon.js --json` 或等价加载 / 记录 addon 可用性；如果用户选择 `isolated-vm`，运行 `scripts/check_xbs_isolated_vm.js --markdown` 并在 Context 内记录 `window.xbs` 可用性；不要等检测到 `toString`、属性描述符、原型链或 `document.all` 问题后才考虑 native 能力。创建 native-like 函数、WebAPI 普通方法、构造函数、getter、setter、实例对象、集合对象、`navigator.plugins` / `navigator.mimeTypes`、`document.all`、`createNativeObject` / `createProtoChains` / `createNativeCollection` / `getMimeTypesAndPlugins` 支持的对象时，addon.node 或 xbs native API 可用必须优先使用 native API；`Blob`、`File`、`FormData`、`Event`、`XMLHttpRequest`、`screen`、`indexedDB`、`navigator.plugins`、`navigator.mimeTypes`、`HTMLCollection`、`NodeList`、`PluginArray`、`MimeTypeArray`、`URL.createObjectURL`、`CSS.supports`、Observer、MessageChannel、Canvas/WebGL、Audio、Worker 等进入补环境范围后，也必须从第一版实现就走 native-first；其中 plugins / mimeTypes 必须优先走 `getMimeTypesAndPlugins(config)`，集合对象必须优先走 `createNativeCollection`。只有用户明确要求不使用 native 能力、addon / xbs 缺失、ABI 不兼容或调用失败时，才降级为 `NativeProtect` / JS fallback，并把豁免或降级原因写入 notes、阶段输出和最终总结。
+27. **指纹值回放优先**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等浏览器指纹时，不要在 Node.js 中强行复刻渲染管线，也不要因 node-canvas / headless-gl / jsdom 等结果不一致而建议最终改用浏览器自动化；应先用已确认取证模式采集真实浏览器终端 API 返回值、调用参数和调用栈，再在 Node.js 交付环境中按调用特征回放。缺少指纹样本时必须阻塞并提示补采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
 
-28. **真实性保护默认开启**：补环境阶段采用探测 / 交付双模式，探测模式允许 Proxy 记录访问路径；从第一次编写 env 骨架开始就必须按真实浏览器对象模型固化关键 WebAPI，而不是等 trace 或目标检测命中后才补保护。所有新增或修改的关键 WebAPI 默认使用 `Object.defineProperty` / `defineProperties` 描述符、getter / setter、构造函数、原型链、函数 toString 保护、访问器 toString 保护、实例对象 `Object.prototype.toString` / `Symbol.toStringTag` 保护、`constructor` 和 `instanceof` 链路；构造函数失败时的错误类型、错误构造器、`message` 和直接调用 / `new` 调用差异必须按目标浏览器采样复现，不能统一写泛化 `Illegal constructor`；addon 构造函数 / `createProtoChains` 实例工厂创建出的对象不要再用 `markObjectType` 或 `markObjectToString` 二次伪装对象类型，只有 JS fallback 普通对象才允许 `markObjectToString` 并记录原因；禁止把 `ctx.X = function(){}`、`ctx.X = { method(){} }`、`prototype = { method(){} }`、`Object.assign(ctx, { ...method(){} })`、`ctx.X = globalThis.X` 作为 WebAPI 主路径。只有用户明确要求关闭保护时才可豁免并记录原因。
-29. **通用代码变更记忆默认维护**：复杂 case 或修改任何关键源码前必须读取 `references/code-change-memory.md`，并读取 / 创建 `case/notes/代码变更记忆.md`；修改前搜索相关文件名、函数名、参数名和错误关键词，避免写回已失败方案；修改后立即追加记录，写明修改前逻辑、问题证据、本次修改、修改理由、已失败尝试、禁止回退、验证命令、验证结果、当前验证范围、遗留风险和当前状态。不要把“当前报错消失”写成无验证范围的固定结论，只能写成“临时修复”“当前验证通过”“稳定基线”等有范围的状态；交付前必须按本轮变更运行 `scripts/check_change_memory.js --case-dir case --changed <file> --require-entry --markdown` 或说明用户明确豁免。
+28. **Node 泄露先阻断**：正式运行目标 JS 前先确认目标 JS 所在运行上下文不暴露 `process/Buffer/require/module/exports/global/__dirname/__filename/setImmediate/clearImmediate` 等 Node 能力，也不得直接复用宿主 Node Web API 兼容层。按 Node 官方文档，`navigator` 是 Node 21+ 全局对象，不是 Node 20 官方新增；检测到宿主 `navigator` 时必须先删除或隔离，再安装浏览器式 `Navigator`；`navigator.userAgent` 不得为 `Node.js/<major>`，不得暴露 Node 来源的 `navigator.locks`。检测到 Node 22.4+ 宿主 `localStorage/sessionStorage`、宿主 `performance.nodeTiming/eventLoopUtilization/timerify/markResourceTiming`、宿主 `fetch/WebSocket/BroadcastChannel/MessageChannel` 时，必须删除、隔离或用浏览器样本覆盖。`URL/TextEncoder/Streams/Events/crypto/WebAssembly/queueMicrotask` 等浏览器同名 API 如果参与检测，也必须按浏览器样本或可控实现安装，不能盲目透传 Node 宿主构造器。可使用用户已确认的补环境框架、独立 Node 进程或显式隔离全局对象，但不因 Node 泄露阻断自动切换到 `vm` / `isolated-vm`，并执行六项纯计算预检或说明跳过原因。
 
-30. **补环境代码质量默认约束**：生成或修改最终补环境代码前必须先读取 `references/code-style.md`，先规划目录和文件职责，再编码；代码必须简洁、模块化、具名函数清晰、无压缩堆叠、无临时调试痕迹，属性描述符、构造函数 callback、WebAPI 方法安装、`Object.assign` 和较长 `try/catch` 不得压成一行，并在文件头、关键 WebAPI、getter / setter、addon-first、fallback、构造函数错误采样、指纹回放和加密入口处写中文注释。中文注释必须 UTF-8 正常显示，不得包含问号、连续问号或乱码；交付前必须运行 `scripts/check_code_quality.js --case-dir case --markdown`。
+29. **补环境初始化即 addon-first / xbs native-first**：进入 Node.js 补环境阶段的第一步就必须检测 native 能力：普通 Node runtime 运行 `scripts/load_native_addon.js --json` 或等价加载 / 记录 addon 可用性；如果用户选择 `isolated-vm`，运行 `scripts/check_xbs_isolated_vm.js --markdown` 并在 Context 内记录 `window.xbs` 与 `xbs.dom.createDocument` 可用性；不要等检测到 `toString`、属性描述符、原型链或 `document.all` 问题后才考虑 native 能力。创建 native-like 函数、WebAPI 普通方法、构造函数、getter、setter、实例对象、集合对象、`navigator.plugins` / `navigator.mimeTypes`、`document.all`、`createNativeObject` / `createProtoChains` / `createNativeCollection` / `getMimeTypesAndPlugins` 支持的对象时，addon.node 或 xbs native API 可用必须优先使用 native API；`Blob`、`File`、`FormData`、`Event`、`XMLHttpRequest`、`screen`、`indexedDB`、`navigator.plugins`、`navigator.mimeTypes`、`HTMLCollection`、`NodeList`、`PluginArray`、`MimeTypeArray`、`URL.createObjectURL`、`CSS.supports`、Observer、MessageChannel、Canvas/WebGL、Audio、Worker 等进入补环境范围后，也必须从第一版实现就走 native-first；其中 plugins / mimeTypes 必须优先走 `getMimeTypesAndPlugins(config)`，集合对象必须优先走 `createNativeCollection`。如果 addon.node 出现 ABI 不兼容，不得直接降级；先读取 `references/node-version-recovery.md`，提示 addon 兼容 Node.js v25.8.2，检测 nvm 后让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝切换 Node。用户同意后用 nvm 安装 / 切换 v25.8.2 并重新加载 addon；只有用户明确拒绝、当前平台缺失、切换后仍失败、用户明确要求不使用 native 能力或 API 调用失败时，才降级为 `NativeProtect` / JS fallback，并把豁免或降级原因写入 notes、阶段输出和最终总结。
 
-31. **按 Level 1/2/3 分层补齐**：先基础运行层，再指纹真实性层，最后目标 SDK 专用层；不要把站点私有逻辑污染通用 env。
+30. **真实性保护默认开启**：补环境阶段采用探测 / 交付双模式，探测模式允许 Proxy 记录访问路径；从第一次编写 env 骨架开始就必须按真实浏览器对象模型固化关键 WebAPI，而不是等 trace 或目标检测命中后才补保护。所有新增或修改的关键 WebAPI 默认使用 `Object.defineProperty` / `defineProperties` 描述符、getter / setter、构造函数、原型链、函数 toString 保护、访问器 toString 保护、实例对象 `Object.prototype.toString` / `Symbol.toStringTag` 保护、`constructor` 和 `instanceof` 链路；构造函数失败时的错误类型、错误构造器、`message` 和直接调用 / `new` 调用差异必须按目标浏览器采样复现，不能统一写泛化 `Illegal constructor`；addon 构造函数 / `createProtoChains` 实例工厂创建出的对象不要再用 `markObjectType` 或 `markObjectToString` 二次伪装对象类型，只有 JS fallback 普通对象才允许 `markObjectToString` 并记录原因；禁止把 `ctx.X = function(){}`、`ctx.X = { method(){} }`、`prototype = { method(){} }`、`Object.assign(ctx, { ...method(){} })`、`ctx.X = globalThis.X` 作为 WebAPI 主路径。只有用户明确要求关闭保护时才可豁免并记录原因。
+31. **通用代码变更记忆默认维护**：复杂 case 或修改任何关键源码前必须读取 `references/code-change-memory.md`，并读取 / 创建 `case/notes/代码变更记忆.md`；修改前搜索相关文件名、函数名、参数名和错误关键词，避免写回已失败方案；修改后立即追加记录，写明修改前逻辑、问题证据、本次修改、修改理由、已失败尝试、禁止回退、验证命令、验证结果、当前验证范围、遗留风险和当前状态。不要把“当前报错消失”写成无验证范围的固定结论，只能写成“临时修复”“当前验证通过”“稳定基线”等有范围的状态；交付前必须按本轮变更运行 `scripts/check_change_memory.js --case-dir case --changed <file> --require-entry --markdown` 或说明用户明确豁免。
 
-32. **结果不一致先排查静默失败**：不报错但参数不一致时，若取证模式为 ruyiPage + RuyiTrace，先回看 NDJSON 中与 Date / performance / random / storage / navigator / canvas / WebGL / Worker / WASM 邻近的调用栈，再按请求样本、init 参数、存储、时间随机、加载顺序、toString、descriptor、原型链、Worker/WASM 顺序排查；若涉及 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，先检查真实浏览器采样值和回放匹配 key。
+32. **补环境代码质量默认约束**：生成或修改最终补环境代码前必须先读取 `references/code-style.md`，先规划目录和文件职责，再编码；代码必须简洁、模块化、具名函数清晰、无压缩堆叠、无临时调试痕迹，属性描述符、构造函数 callback、WebAPI 方法安装、`Object.assign` 和较长 `try/catch` 不得压成一行，并在文件头、关键 WebAPI、getter / setter、addon-first、fallback、构造函数错误采样、指纹回放和加密入口处写中文注释。选择 isolated-vm 时，`navigator`、`document`、`window`、`canvas`、`webgl`、`xhr`、`crypto` 等补环境实现必须是 `src/env/browser-objects/`、`src/env/fingerprint/` 等目录下的真实 `.js` 文件，由 runtime 按文件读取后注入 Context；不得把主要补环境源码写成 `String.raw` 大字符串、`CORE_SCRIPT` / `BROWSER_OBJECTS_SCRIPT` / `*_SCRIPT` 聚合文件，极小 bootstrap 例外需少于 40 行并说明原因。中文注释必须 UTF-8 正常显示，不得包含问号、连续问号或乱码；交付前必须运行 `scripts/check_code_quality.js --case-dir case --markdown`。
 
-33. **样本验证优先**：不要以“不报错”为完成标准，必须用 fixtures 对比浏览器真实加密参数或关键输出。浏览器取证也不要以“抓到任意包”为成功标准；目标接口必须有非失败业务响应，跨域接口不能把单独的 `OPTIONS` preflight 当作成功。
+33. **按 Level 1/2/3 分层补齐**：先基础运行层，再指纹真实性层，最后目标 SDK 专用层；不要把站点私有逻辑污染通用 env。
 
-34. **最终交付必须是规范项目且只有一个入口**：最终交付可以包含规范目录和必要模块，例如 `src/env/`、`src/signer/`、`src/request/`、`package.json` 或 Python 包模块；但只能有一个直接执行入口，默认 `result/final.js`，用户明确选择 Python 请求验证时可为 `result/final.py`。执行该入口必须自动完成“安装补环境 → 调用目标入口生成加密参数 → 使用已确认的 Node.js / Python TLS 指纹兼容客户端发送模拟请求或按用户选择只输出本地参数 → 输出请求成功/失败结果”。不要把测试脚本、临时 runner、server、bridge、trace、HAR、hook、截图、Profile、缓存、指纹采样 Hook 或临时响应作为最终产物交付。
+34. **结果不一致先排查静默失败**：不报错但参数不一致时，若取证模式为 ruyiPage + RuyiTrace，先回看 NDJSON 中与 Date / performance / random / storage / navigator / canvas / WebGL / Worker / WASM 邻近的调用栈，再按请求样本、init 参数、存储、时间随机、加载顺序、toString、descriptor、原型链、Worker/WASM 顺序排查；若涉及 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，先检查真实浏览器采样值和回放匹配 key。
 
-35. **最终项目禁止浏览器自动化代码**：最终项目内任何交付文件都不得包含 ruyiPage、RuyiTrace 启动、Camoufox、camoufox-reverse-mcp、CloakBrowser、Playwright、Puppeteer、Selenium、CDP、WebDriver、`launch_browser`、`network_capture`、`page.goto`、`browser.launch` 等自动化取证代码。ruyiPage / RuyiTrace / Camoufox / camoufox-reverse-mcp / CloakBrowser 只允许出现在前置取证和日志分析阶段，不能进入最终项目代码。
+   **高强度环境行为 diff**：如果目标疑似 Shape / F5 / Akamai / DataDome / Kasada / reese84 / bx-* 等浏览器完整性检测，或出现异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链 walk、brand check、MutationObserver、userAgentData、window.chrome、canPlayType、mediaSession、Client Hints 一致性等检测迹象，必须读取 `references/high-intensity-env-diff.md`。先用真实浏览器采样行为基线，再在 Node 补环境中运行同类 probe 做 diff，输出 `case/notes/high-intensity-env-diff.md` 和最终总结覆盖矩阵；不得只因当前 sign 生成成功就跳过这些差异，也不得主动进入 JSVMP opcode / 字节码源码分析。
 
-36. **最终发送请求只能用已确认的 Node.js 或 Python 客户端**：最终验证必须由 `final.js` 入口调用 Node.js CycleTLS / impers 等模块，或由 `final.py` 入口调用 curl_cffi / cffi_curl / cyCronet 等模块发起请求；不得先用普通客户端失败后再临时切换，不得生成加密参数后再通过浏览器自动化点击、导航或抓包验证。
+35. **样本验证优先**：不要以“不报错”为完成标准，必须用 fixtures 对比浏览器真实加密参数或关键输出。浏览器取证也不要以“抓到任意包”为成功标准；目标接口必须有非失败业务响应，跨域接口不能把单独的 `OPTIONS` preflight 当作成功。
 
-37. **TLS 指纹兼容不是访问控制绕过**：TLS 指纹兼容客户端用于复现浏览器网络栈差异导致的最终验证请求。
+36. **最终交付必须是规范项目且只有一个入口**：最终交付可以包含规范目录和必要模块，例如 `src/env/`、`src/signer/`、`src/request/`、`package.json` 或 Python 包模块；但只能有一个直接执行入口，默认 `result/final.js`，用户明确选择 Python 请求验证时可为 `result/final.py`。执行该入口必须自动完成“安装补环境 → 调用目标入口生成加密参数 → 使用已确认的 Node.js / Python TLS 指纹兼容客户端发送模拟请求或按用户选择只输出本地参数 → 输出请求成功/失败结果”。不要把测试脚本、临时 runner、server、bridge、trace、HAR、hook、截图、Profile、缓存、指纹采样 Hook 或临时响应作为最终产物交付。
 
-38. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程与合适推进节点生成其他阶段报告。阶段报告要覆盖本阶段新增 / 修改 WebAPI、功能、Bug 修复、指纹能力、真实性保护、测试与清理等能力增量，交付前可运行 `scripts/check_stage_reports.js --case-dir case --require-dynamic-fields --markdown` 检查。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_webapi_addon_coverage.js --case-dir case --markdown`、存在 Trace 时运行 `scripts/analyze_trace_complexity.js --case-dir case --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查，确认代码可读性与中文注释质量、WebAPI addon 覆盖、补环境真实性、addon-first/native fallback 记录、补环境框架选择记录、Trace 复杂度评估与框架选择解耦、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python 客户端实现、无多余测试/临时产物。
+37. **最终项目禁止浏览器自动化代码**：最终项目内任何交付文件都不得包含 ruyiPage、RuyiTrace 启动、Camoufox、camoufox-reverse-mcp、CloakBrowser、Playwright、Puppeteer、Selenium、CDP、WebDriver、`launch_browser`、`network_capture`、`page.goto`、`browser.launch` 等自动化取证代码。ruyiPage / RuyiTrace / Camoufox / camoufox-reverse-mcp / CloakBrowser 只允许出现在前置取证和日志分析阶段，不能进入最终项目代码。
 
-39. **清理策略**：每个测试命令、脚本验证或阶段结束后立即清理本步骤产生的临时 hook、trace、日志、缓存、失败下载、无用 HAR、临时截图、临时响应、空文件和空目录；不要等项目完全结束后再统一清理。最终回复前必须复查清理结果。登录态 Profile、Cookie、localStorage 按敏感材料处理，删除前必须确认用户意图。
+38. **最终发送请求只能用已确认的 Node.js 或 Python 客户端**：最终验证必须由 `final.js` 入口调用 Node.js CycleTLS / impers 等模块，或由 `final.py` 入口调用 curl_cffi / cffi_curl / cyCronet 等模块发起请求；不得先用普通客户端失败后再临时切换，不得生成加密参数后再通过浏览器自动化点击、导航或抓包验证。
 
+39. **TLS 指纹兼容不是访问控制绕过**：TLS 指纹兼容客户端用于复现浏览器网络栈差异导致的最终验证请求。
+
+40. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；最终总结必须包含按类别分组的环境与指纹 API 调用回放明细，精确到访问的属性、调用的方法、构造函数、getter / setter、调用参数摘要、返回值 / 回放值摘要、来源证据、补环境实现方式、真实性保护和验证结果；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程与合适推进节点生成其他阶段报告。阶段报告要覆盖本阶段新增 / 修改 WebAPI、功能、Bug 修复、指纹能力、真实性保护、测试与清理等能力增量，交付前可运行 `scripts/check_stage_reports.js --case-dir case --require-dynamic-fields --markdown` 检查。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_webapi_addon_coverage.js --case-dir case --markdown`、存在 Trace 时运行 `scripts/analyze_trace_complexity.js --case-dir case --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查，确认代码可读性与中文注释质量、WebAPI addon 覆盖、补环境真实性、addon-first/native fallback 记录、补环境框架选择记录、Trace 复杂度评估与框架选择解耦、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、环境与指纹 API 调用回放分类明细、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python 客户端实现、无多余测试/临时产物。
+
+41. **清理策略**：每个测试命令、脚本验证或阶段结束后立即清理本步骤产生的临时 hook、trace、日志、缓存、失败下载、无用 HAR、临时截图、临时响应、空文件和空目录；不要等项目完全结束后再统一清理。最终回复前必须复查清理结果。登录态 Profile、Cookie、localStorage 按敏感材料处理，删除前必须确认用户意图。
 ## 辅助脚本
 
 
@@ -239,6 +251,19 @@ node scripts/check_dynamic_resources.js --case-dir case --require-runtime-refres
 用于检查 `case/notes/resource-manifest.json` 是否记录了已保存 HTML、JS bundle、动态 chunk、challenge JS、403/风控页面和内联脚本；若资源 `dynamic: true` 且 `requiredForFinal: true`，必须存在运行时刷新模块，最终入口必须先刷新当前有效 HTML / JS / seed / challenge，再生成加密参数和发送请求。检查失败时不得把旧快照固定交付。
 
 
+### 检查 web-verify-patcher 是否安装
+
+```bash
+
+node scripts/check_web_verify_patcher.js --markdown
+
+node scripts/check_web_verify_patcher.js --require --json
+
+```
+
+验证码接口的加密参数已经能通过补环境生成后，如果需要识别验证码、生成真实轨迹、坐标换算或验证提交分析，先运行该检查。未安装时先让用户选择自动安装或自行安装；自动安装必须确认仓库 / 分支中存在 `web-verify-patcher/` 目录，不得假装安装成功。
+
+
 ### 加载可选 native addon
 
 
@@ -248,10 +273,12 @@ node scripts/load_native_addon.js --json
 
 node scripts/load_native_addon.js --addon <path-to-addon.node> --json
 
+node scripts/check_node_runtime_compat.js --target addon --markdown
+
 ```
 
 
-本 Skill 随包携带可选 native addon，默认从 `assets/native-addon/<platform>-<arch>/addon.node` 自动加载；“可选”只表示不是跨平台强依赖，不表示可以在补环境时跳过。进入补环境阶段就要尝试加载并记录结果；一旦当前平台可用，创建函数、访问器、`document.all`、原型链等 addon 支持能力时必须优先使用 addon。只有用户明确要求不使用 addon、当前平台缺失、Node ABI 不兼容或 addon 调用失败时，才降级到 `NativeProtect` / JS fallback，或由用户显式提供 `--addon` / `WEB_JS_ENV_PATCHER_ADDON` 覆盖路径。不要在 Skill 文档或脚本中写入本机绝对路径。
+本 Skill 随包携带可选 native addon，默认从 `assets/native-addon/<platform>-<arch>/addon.node` 自动加载；“可选”只表示不是跨平台强依赖，不表示可以在补环境时跳过。进入补环境阶段就要尝试加载并记录结果；一旦当前平台可用，创建函数、访问器、`document.all`、原型链等 addon 支持能力时必须优先使用 addon。如果 Node ABI 不兼容，先执行 Node 版本兼容恢复流程：addon 兼容 Node.js v25.8.2，检测 nvm 并征得用户同意是否安装 / 切换；用户拒绝后才允许降级到 `NativeProtect` / JS fallback。当前平台缺失、addon 调用失败或用户明确要求不使用 addon 时，也必须记录原因；用户可显式提供 `--addon` / `WEB_JS_ENV_PATCHER_ADDON` 覆盖路径。不要在 Skill 文档或脚本中写入本机绝对路径。
 
 
 ### 检测 ruyiPage / RuyiTrace / Camoufox / CloakBrowser / 外部浏览器工具
@@ -376,16 +403,17 @@ assets/runtime-frameworks/jsenv-runtime.js
 assets/runtime-frameworks/runtime-factory.js
 ```
 
-只有用户明确选择对应补环境框架时才复制对应 runtime。选择 `isolated-vm` 时必须同时复制随包魔改 `xbs-isolated-vm/<platform>-<arch>/isolated_vm.node` 并在 Context 内使用 `window.xbs`。用户未选择时默认不使用补环境框架，最终项目不得混入 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖。
+只有用户明确选择对应补环境框架时才复制对应 runtime。选择 `isolated-vm` 时必须同时复制随包魔改 `xbs-isolated-vm/<platform>-<arch>/isolated_vm.node` 并在 Context 内使用 `window.xbs` 与 `xbs.dom.createDocument(options)`。用户未选择时默认不使用补环境框架，最终项目不得混入 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖。
 
 ### 检查 xbs isolated-vm 可用性
 
 ```bash
-node scripts/check_xbs_isolated_vm.js --markdown
-node scripts/check_xbs_isolated_vm.js --strict --json
+node --no-node-snapshot scripts/check_xbs_isolated_vm.js --markdown
+node --no-node-snapshot scripts/check_xbs_isolated_vm.js --strict --json
+node scripts/check_node_runtime_compat.js --target isolated-vm --markdown
 ```
 
-仅在用户选择 `isolated-vm` 时执行。默认自检遇到 ABI 不匹配会输出中文可解释失败；真实 case 已确认使用 isolated-vm 时，`--strict` 可作为阻断门禁。
+仅在用户选择 `isolated-vm` 时执行。默认自检会检查 `window.xbs` 17 个核心 API、`xbs.dom.createDocument` 和基础 DOM 行为；遇到 ABI 不匹配会输出中文可解释失败和 v26.3.1 恢复建议；真实 case 已确认使用 isolated-vm 时，`--strict` 可作为阻断门禁。ABI 不匹配时先征得用户同意是否通过 nvm 安装 / 切换 Node.js v26.3.1，用户拒绝后才允许提供匹配魔改构建产物或改选框架。
 
 ### 检查补环境代码可读性与中文注释
 
@@ -595,27 +623,39 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 是否需要登录：
 
+- 是否验证码 / 风控验证接口：否 / 是 / 待确认
+
+- 验证码流程取证方式：不涉及 / 用户提供流程由 AI 自动执行 / 用户自己完成流程，AI 捕获 / 待确认
+
 - 取证模式：ruyiPage + RuyiTrace / 仅 ruyiPage / Camoufox + camoufox-reverse-mcp / 仅 Camoufox / CloakBrowser / 用户手动取证 / AI 自行决定
 
 - 取证一致性：后续抓包、JS 收集、Hook、断点、截图、日志采集均使用上述模式；如需切换将再次请求确认
 
+- 取证事件可信性：自动点击 / 拖拽 / 键盘 / 滚动 / 验证码交互默认防 `isTrusted` 检测；ruyiPage 优先 native BiDi / human actions，必要 JS 事件使用 `ruyi: true`；Camoufox / CloakBrowser 使用 humanize / 原生输入，不把普通 `dispatchEvent` 作为主路径
+
 - RuyiTrace 状态：已安装并将优先自动捕获 / 未检测到 / 待安装 / 自动捕获失败需手动协助 / 用户明确降级为仅 ruyiPage
+
+- 验证码 Trace 覆盖要求：若是验证码接口，RuyiTrace / Hook / 抓包必须覆盖触发到验证完整流程；用户手动流程需等待“已经完成触发到验证流程”
 
 - Cookie 过期处理：登录态需用户手动登录或授权样本；非登录 Cookie 将分析生成 / 刷新链路，不默认索要新 Cookie
 
 - 最终请求 TLS 指纹兼容客户端：Node.js CycleTLS / Node.js impers / Node.js curl-cffi / Python curl_cffi / Python cffi_curl / Python cyCronet / 不发真实请求
 
-- 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm，需自检 `window.xbs`） / Node.js 内置 vm / jsEnv；如未明确选择，将按“不使用补环境框架”继续；选择 jsEnv 时需提供项目路径、入口和使用文档
+- 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm，需自检 `window.xbs` 17 个核心 API、`xbs.dom.createDocument` 和 DOM smoke test） / Node.js 内置 vm / jsEnv；如未明确选择，将按“不使用补环境框架”继续；选择 isolated-vm 时若 ABI 不兼容，先询问是否通过 nvm 安装 / 切换 Node.js v26.3.1；选择 jsEnv 时需提供项目路径、入口和使用文档
 
 - Trace 复杂度评估：已有 RuyiTrace / Node trace / missing-env 等日志时，将基于日志评估复杂度、风险点和补环境优先级；复杂度评估不自动决定补环境框架
 
-- 补环境真实性保护：默认启用 toString / 属性描述符 / 原型链 / 访问器 / 实例对象保护，默认 addon-first；选择 xbs isolated-vm 时以 `window.xbs` native-first 表达；如需关闭必须明确说明
+- 补环境真实性保护：默认启用 toString / 属性描述符 / 原型链 / 访问器 / 实例对象保护，默认 addon-first；addon ABI 不兼容时先询问是否通过 nvm 安装 / 切换 Node.js v25.8.2，用户拒绝后才降级；选择 xbs isolated-vm 时以 `window.xbs` native-first 表达；如需关闭必须明确说明
 
 - 通用代码变更记忆：复杂 case 默认维护 `case/notes/代码变更记忆.md`；修改关键源码前读取，修改后记录失败尝试、禁止回退、验证范围和遗留风险
 
 - 阶段报告：默认从 `case/阶段报告/01-需求信息确认.md` 开始，并在每个合适推进节点生成中文命名 Markdown；内容包含项目进展、修改文件、新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、测试和清理；如不需要生成必须明确说明
 
-- 最终总结：默认生成 `result/最终项目总结.md`；如不需要生成必须明确说明
+- 最终总结：默认生成 `result/最终项目总结.md`，并包含按 navigator / document / window / canvas / webgl 等类别分组的环境与指纹 API 调用回放明细；如不需要生成必须明确说明
+
+- 高强度环境检测覆盖矩阵：如果涉及 Shape / F5 / Akamai / DataDome / Kasada / reese84 / bx-* 或类似浏览器完整性检测，最终总结默认记录异常模式、Node 泄露、toString 多通道、DataCloneError、Error stack、属性枚举、原型链、MutationObserver、userAgentData、window.chrome、媒体能力、网络 Header / Client Hints 一致性和动态 JS 多版本回归的采样 / diff / 修复状态；未涉及也要写明“未涉及”。
+
+- web-verify-patcher 状态：验证码后续识别 / 轨迹 / 验证分析前检测是否已安装；未安装时先让用户选择自动安装或自行安装
 
 
 确认后我将按以下流程执行：
@@ -628,27 +668,29 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 4. 检测用户选择的 TLS 指纹兼容客户端是否已安装；未安装时先让用户确认安装、改选其他客户端或选择不发真实请求。
 
-5. 如涉及 Cookie/token 无效或过期，先区分登录态与非登录生成型 Cookie；非登录 Cookie 将定位生成链路并纳入补环境。
+5. 在任何取证动作前确认是否为验证码 / 风控验证接口；若是，先确认用户提供完整触发到验证流程，或用户自己完成流程、AI 负责捕获并等待“已经完成触发到验证流程”。
 
-6. 初步判断参数变化和依赖。
+6. 如涉及 Cookie/token 无效或过期，先区分登录态与非登录生成型 Cookie；非登录 Cookie 将定位生成链路并纳入补环境。
 
-7. 定位请求发起位置与加密入口。
+7. 初步判断参数变化和依赖。
 
-8. 输出 source / entry / builder / writer 四层链路。
+8. 定位请求发起位置与加密入口。
 
-9. 收集相关 JS 文件。
+9. 输出 source / entry / builder / writer 四层链路。
 
-10. 检查 JS 文件是否可正常获取。
+10. 收集相关 JS 文件。
 
-11. 如用户选择 RuyiTrace，检测已安装后优先自动捕获 NDJSON 日志；捕获成功后立即导入、输出环境访问摘要，并把相关 `api` / `stack.file` / `line` / `col` 作为后续补环境优先依据。只有自动捕获失败、需要登录 / 验证 / 权限交互或用户明确选择手动时，才要求用户手动采集 / 提供 NDJSON。
+11. 检查 JS 文件是否可正常获取。
 
-12. 如果存在 RuyiTrace / Node trace / missing-env 等日志，执行 Trace 复杂度评估并写入阶段报告；复杂度只影响风险和补环境优先级，不决定补环境框架。
+12. 如用户选择 RuyiTrace，检测已安装后优先自动捕获 NDJSON 日志；捕获成功后立即导入、输出环境访问摘要，并把相关 `api` / `stack.file` / `line` / `col` 作为后续补环境优先依据。只有自动捕获失败、需要登录 / 验证 / 权限交互或用户明确选择手动时，才要求用户手动采集 / 提供 NDJSON。
 
-13. 在正式补环境前提醒用户选择补环境框架：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv；用户未明确选择时按“不使用补环境框架”继续；选择 isolated-vm 时先自检 `window.xbs` 和 Node ABI；选择 jsEnv 时先确认安装路径、入口文件和使用文档。
+13. 如果存在 RuyiTrace / Node trace / missing-env 等日志，执行 Trace 复杂度评估并写入阶段报告；复杂度只影响风险和补环境优先级，不决定补环境框架。
 
-14. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon.node 或 xbs native 能力；Node 泄露阻断必须覆盖基础 Node 能力和 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ Storage、Node `performance`、宿主网络 / 消息 Web API 兼容层，以及 `URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
+14. 在正式补环境前提醒用户选择补环境框架：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv；用户未明确选择时按“不使用补环境框架”继续；选择 isolated-vm 时先自检 `window.xbs`、`xbs.dom.createDocument`、DOM smoke test 和 Node ABI；如果 ABI 不兼容，先按 nvm + Node.js v26.3.1 恢复流程询问用户，用户拒绝后才让用户提供匹配构建产物或改选框架；选择 jsEnv 时先确认安装路径、入口文件和使用文档。
 
-15. 输出补环境前置分析结论。
+15. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon.node 或 xbs native 能力；addon ABI 不兼容时先按 nvm + Node.js v25.8.2 恢复流程询问用户，用户拒绝后才允许 NativeProtect / JS fallback；Node 泄露阻断必须覆盖基础 Node 能力和 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ Storage、Node `performance`、宿主网络 / 消息 Web API 兼容层，以及 `URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
+
+16. 输出补环境前置分析结论。
 
 
 请确认以上信息是否正确。确认后我再继续。
@@ -674,6 +716,10 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 - 缺失信息或阻塞点。
 
 - 已确认取证模式与工具可用性。
+
+- 验证码接口确认状态：不涉及 / 已确认是验证码接口 / 待确认；如涉及，记录用户选择的触发到验证取证方式。
+
+- 验证码流程覆盖状态：用户提供流程由 AI 自动取证 / 用户手动完成流程且已回复“已经完成触发到验证流程” / RuyiTrace 或抓包未覆盖完整流程。
 
 - 已确认最终请求 TLS 指纹兼容客户端与可用性。
 
@@ -709,6 +755,8 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 如果选择 ruyiPage + RuyiTrace：先给出 NDJSON 证据摘要和长字段截断风险，再说明 Node trace / Proxy 只是补充验证。
 
+- 如果选择 isolated-vm：先给出 `window.xbs` 17 个核心 API、`xbs.dom.createDocument`、DOM smoke test、Node ABI 和二进制来源的自检摘要；需要 DOM 时说明 document 是否由 `xbs.dom.createDocument(options)` 创建、是否挂到 `window.document`、`omitApis` / `features` 配置，以及没有使用已删除旧 DOM API；同时说明补环境源码是否按真实文件模块加载，例如 `browser-objects/navigator.js`、`browser-objects/document.js`、`fingerprint/canvas.js`，不得以大段字符串脚本作为主要实现。
+
 - Trace 复杂度评估摘要：复杂度等级、主要证据和补环境优先级；明确该评估不自动决定 `isolated-vm` / `vm` / `jsEnv` 使用。
 
 - 缺失环境列表与补齐优先级。
@@ -723,7 +771,15 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹终端 API 的真实浏览器采样值、回放匹配规则和缺失样本处理记录。
 
+- 环境与指纹 API 调用回放明细：按类别分组记录 `window / global`、`navigator`、`document / DOM`、`location / history`、`screen`、`storage / cookie`、`crypto / random`、`performance / timing`、`network`、`canvas`、`webgl`、`webgpu`、`audio`、`font / CSS / DOM geometry`、`events / trusted input`、`worker / wasm / postMessage`、`其他` 等分类；每条记录必须精确到 API 路径（如 `navigator.userAgent`、`Document.prototype.createElement`、`HTMLCanvasElement.prototype.getContext`）、访问类型、来源证据、参数摘要、返回值 / 回放值摘要、补环境实现、真实性保护和验证结果。未涉及的分类写“未涉及”，不得伪造调用；敏感值和超长值只写脱敏摘要、长度、hash 或截断说明。
+
+- 高强度环境检测覆盖矩阵：如目标涉及高强度浏览器完整性检测，记录真实浏览器基线、Node 补环境审计、diff 结果、已修复项、fallback 项、未采样项和遗留风险；尤其覆盖异常模式、toString 多通道、structuredClone / postMessage DataCloneError、Error stack、属性枚举、原型链 walk、brand check、MutationObserver、userAgentData、window.chrome、canPlayType、mediaSession、网络 Header / Client Hints 一致性和动态 JS 多版本回归。
+
 - fixtures 对比结果。
+
+- 验证码事件轨迹 fixture：如目标为验证码接口，说明 `motionTrack` / `eventFixture` / `verifyContext` 等可替换入口、旧轨迹来源、中文注释质量，以及当前轨迹只用于补环境生成加密参数，不保证最终验证通过。
+
+- web-verify-patcher 交接状态：如需要后续识别 / 轨迹 / 验证分析，说明 `check_web_verify_patcher.js --require` 检测结果、安装状态和交接材料。
 
 - 非登录 Cookie 生成 / 刷新逻辑是否已纳入最终入口的记录（若涉及）。
 
@@ -733,4 +789,4 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 阶段报告写入状态：本阶段新增 / 修改 WebAPI、新增功能、Bug 修复、指纹能力、真实性保护、测试内容、清理结果、风险与下一步计划是否已写入中文阶段报告。
 
-- 最终项目检查结果：只有一个执行入口、无多余测试/临时文件、无浏览器自动化代码、补环境代码简洁可读且中文注释 UTF-8 正常、指纹值由 Node.js 终端 API 回放实现、最终请求由已确认的 Node.js / Python TLS 指纹兼容客户端实现，或用户明确选择不发真实请求；最终项目未硬编码或复用 cURL / fixture 中的加密参数样本值，而是通过补环境后的目标 JS 入口 / signer 生成；最终项目只包含用户确认的 runtime，未选择框架时不包含 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖，未选择 isolated-vm 时不包含 `xbs-isolated-vm/` 或 `isolated_vm.node`；最终总结已生成且 UTF-8 中文正常，除非用户明确要求不生成。
+- 最终项目检查结果：只有一个执行入口、无多余测试/临时文件、无浏览器自动化代码、补环境代码简洁可读且中文注释 UTF-8 正常、指纹值由 Node.js 终端 API 回放实现、最终请求由已确认的 Node.js / Python TLS 指纹兼容客户端实现，或用户明确选择不发真实请求；最终项目未硬编码或复用 cURL / fixture 中的加密参数样本值，而是通过补环境后的目标 JS 入口 / signer 生成；最终项目只包含用户确认的 runtime，未选择框架时不包含 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖，未选择 isolated-vm 时不包含 `xbs-isolated-vm/` 或 `isolated_vm.node`；最终总结已生成且包含高强度环境检测覆盖矩阵、环境与指纹 API 调用回放分类明细，UTF-8 中文正常，除非用户明确要求不生成。

@@ -201,6 +201,71 @@ function inspectPyFunctions(lines, maxFunctionLines) {
   return { problems, warnings };
 }
 
+function inspectEmbeddedScriptStrings(relFile, text) {
+  const problems = [];
+  const warnings = [];
+  const normalized = relFile.replace(/\\/g, '/');
+  const fileName = path.basename(normalized).toLowerCase();
+  const isEnvFile = /(^|\/)src\/env\//i.test(normalized) || /(^|\/)env\//i.test(normalized);
+  if (!/\.(?:js|mjs|cjs)$/i.test(normalized)) return { problems, warnings };
+
+  const scriptRe = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*(?:SCRIPT|SOURCE|CODE)[A-Za-z_$]*)\s*=\s*String\.raw`([\s\S]*?)`/g;
+  let match;
+  while ((match = scriptRe.exec(text))) {
+    const name = match[1];
+    const body = match[2] || '';
+    const bodyLines = body.split(/\r?\n/).length;
+    const looksLikeWebApi = /\b(?:Navigator|Document|Window|Location|History|Screen|XMLHttpRequest|HTMLCanvasElement|WebGL|navigator|document|window|xbs\.|createProtoChains|createNativeFunction|createGetter|createSetter|createNativeCollection|xbs\.dom\.createDocument)\b/.test(body);
+    if (isEnvFile && (bodyLines > 40 || looksLikeWebApi)) {
+      problems.push('发现大段 isolated-vm 补环境字符串 `' + name + ' = String.raw 模板字符串`（约 ' + bodyLines + ' 行）。补环境源码必须拆成真实 .js 文件，例如 browser-objects/navigator.js、document.js、fingerprint/canvas.js，再由 runtime.runFile/runFiles 注入 Context。');
+    } else if (bodyLines > 80) {
+      warnings.push(`发现较大的 String.raw 字符串 \`${name}\`（约 ${bodyLines} 行），请确认不是补环境 WebAPI 主实现。`);
+    }
+  }
+
+  if (isEnvFile && /^script-(?:core|browser|.*objects|.*env).*\.js$/i.test(fileName) && /String\.raw`/.test(text)) {
+    problems.push('发现 script-*.js 聚合字符串补环境文件。isolated-vm 交付应使用真实模块文件，不应把主要 WebAPI 放入 script-core.js 或 script-browser-objects.js。');
+  }
+  if (isEnvFile && /\b[A-Z][A-Z0-9_]*SCRIPT\b[\s\S]{0,200}\.join\(\s*['"]\\n['"]\s*\)/.test(text)) {
+    problems.push('发现把多个 *_SCRIPT 字符串 join 后执行的补环境聚合方式。请改为 runtime.runFiles([...]) 按真实文件注入。');
+  }
+  if (isEnvFile && /module\.exports\s*=\s*\{[\s\S]{0,300}\b[A-Z][A-Z0-9_]*SCRIPT\b/.test(text)) {
+    warnings.push('发现导出 *_SCRIPT 字符串。除极小 bootstrap 外，补环境实现应导出安装函数或通过真实文件加载。');
+  }
+  return { problems, warnings };
+}
+
+function inspectProjectStructure(root, files) {
+  const problems = [];
+  const warnings = [];
+  const codeFiles = files.filter(isCodeFile);
+  const fileEntries = codeFiles.map(filePath => {
+    let text = '';
+    try { text = readUtf8Strict(filePath).text; } catch { text = ''; }
+    return { filePath, relFile: rel(root, filePath), text };
+  });
+  const isolatedVmUsed = fileEntries.some(entry => /\b(?:isolated_vm\.node|xbs-isolated-vm|createXbsRuntime|createIsolatedVmRuntime|window\.xbs|xbs\.dom\.createDocument)\b/.test(entry.text));
+  if (!isolatedVmUsed) return { problems, warnings };
+
+  const envEntries = fileEntries.filter(entry => /(^|\/)src\/env\//i.test(entry.relFile));
+  const embeddedEnvScripts = envEntries.filter(entry => /String\.raw`/.test(entry.text) && /\b(?:Navigator|Document|Window|XMLHttpRequest|HTMLCanvasElement|WebGL|xbs\.|navigator|document|window)\b/.test(entry.text));
+  if (embeddedEnvScripts.length) {
+    problems.push('选择 isolated-vm 时发现补环境 WebAPI 仍以 String.raw 聚合字符串实现：' + embeddedEnvScripts.map(entry => entry.relFile).join('、') + '。请拆分为真实模块文件并用 runtime.runFile/runFiles 加载。');
+  }
+
+  const hasBrowserObjectModule = envEntries.some(entry => /(^|\/)src\/env\/browser-objects\/[^/]+\.js$/i.test(entry.relFile));
+  const touchesBrowserObjects = envEntries.some(entry => /\b(?:navigator|document|window|location|screen|XMLHttpRequest|history|storage)\b/i.test(entry.text));
+  if (touchesBrowserObjects && !hasBrowserObjectModule) {
+    problems.push('选择 isolated-vm 且补了浏览器对象，但未发现 src/env/browser-objects/*.js 模块。请至少按 navigator.js、document.js、window.js 等职责拆分。');
+  }
+
+  const hasRunFiles = fileEntries.some(entry => /\brunFiles\s*\(|\brunFile\s*\(/.test(entry.text));
+  if (embeddedEnvScripts.length && !hasRunFiles) {
+    warnings.push('未发现 runtime.runFile/runFiles 文件化加载入口。建议在 xbs runtime 中提供按文件注入 Context 的能力。');
+  }
+  return { problems, warnings };
+}
+
 function inspectFile(root, file, args) {
   const relFile = rel(root, file);
   const problems = [];
@@ -210,6 +275,9 @@ function inspectFile(root, file, args) {
   const comments = extractComments(file, text);
   const chineseComments = comments.filter(hasChinese);
   const codeLines = codeLineCount(file, lines);
+  const embeddedScriptCheck = inspectEmbeddedScriptStrings(relFile, text);
+  problems.push(...embeddedScriptCheck.problems);
+  warnings.push(...embeddedScriptCheck.warnings);
 
   if (hasBom) problems.push('文件带 UTF-8 BOM，建议使用无 BOM UTF-8。');
   if (/\uFFFD/.test(text)) problems.push('文件包含替换字符，疑似 UTF-8 解码或写入异常。');
@@ -310,6 +378,9 @@ function check(args) {
     for (const p of r.problems) problems.push(`${r.file}: ${p}`);
     for (const w of r.warnings) warnings.push(`${r.file}: ${w}`);
   }
+  const structure = inspectProjectStructure(root, files);
+  for (const p of structure.problems) problems.push(p);
+  for (const w of structure.warnings) warnings.push(w);
   return {
     root,
     clean: problems.length === 0,
@@ -339,6 +410,7 @@ function renderMarkdown(result) {
     `- 单函数行数上限：${result.limits.maxFunctionLines}`,
     '- 必须有中文职责注释，中文注释不得包含问号、连续问号或乱码。',
     '- 禁止压缩代码、过度堆叠语句、调试断点和临时测试标记。',
+    '- isolated-vm 补环境不得以大段 String.raw / *_SCRIPT 字符串作为主要交付形态，必须拆成真实文件模块并通过 runFile/runFiles 注入。',
     '',
   ];
   if (result.problems.length) {
@@ -372,4 +444,4 @@ try {
   process.exit(1);
 }
 
-module.exports = { check, inspectFile, extractComments };
+module.exports = { check, inspectFile, extractComments, inspectEmbeddedScriptStrings, inspectProjectStructure };

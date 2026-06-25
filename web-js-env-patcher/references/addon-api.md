@@ -8,7 +8,7 @@
 
 ## Skill 硬性规则
 
-1. **addon-first 是默认硬性基线**：进入补环境阶段先加载 / 记录 addon，可用时优先调用 addon API；只有用户明确要求不使用 addon、当前平台缺失、ABI 不兼容或 API 调用失败时，才降级为 `NativeProtect` / JS fallback。
+1. **addon-first 是默认硬性基线**：进入补环境阶段先加载 / 记录 addon，可用时优先调用 addon API。ABI 不兼容时不得直接降级；先读取 `node-version-recovery.md`，提示 addon 兼容 Node.js v25.8.1，检测 nvm 并征得用户同意是否安装 / 切换兼容 Node。只有用户拒绝切换、当前平台缺失、切换后仍失败、明确要求不使用 addon 或 API 调用失败时，才降级为 `NativeProtect` / JS fallback。
 2. **新代码优先新版 API**：构造函数、原型链、别名、实例工厂、原型方法和静态方法优先使用 `createProtoChains(descriptors)`；禁止把旧式 `createProtoChains(name, chain)` 或 `createNativeObject(tag, proto, properties)` 写成新代码主路径。
 3. **WebAPI 方法必须 native-like**：普通方法优先 `createNativeFunction(false, name, length, callback)`；构造函数优先 `createProtoChains` 或必要时 `createNativeFunction(true, ...)`；getter / setter 优先 `createGetter` / `createSetter`。
 4. **集合对象优先 addon 集合 API**：`HTMLCollection`、`NodeList`、`PluginArray`、`MimeTypeArray`、`DOMTokenList`、`StyleSheetList` 等浏览器集合对象，addon 可用时优先使用 `createNativeCollection` 或 `getMimeTypesAndPlugins`，不要手写普通数组 / 普通对象作为主路径。
@@ -42,6 +42,7 @@
 - 失败 API、错误信息、Node 版本、平台和 ABI。
 - fallback 覆盖范围和已知差异。
 - 是否为用户明确豁免。
+- 如果是 ABI 不兼容，记录是否已提示 nvm + Node.js v25.8.1 恢复流程、用户选择、重新检测结果，以及为何最终仍需 fallback。
 
 ---
 # 项目对外 API 使用说明

@@ -18,10 +18,17 @@
        ├── env/
        │   ├── install-env.js
        │   ├── native-api.js
+       │   ├── manifest.js
+       │   ├── core/
+       │   │   ├── descriptors.js
+       │   │   └── cookie-store.js
        │   ├── browser-objects/
+       │   │   ├── window.js
        │   │   ├── navigator.js
        │   │   ├── document.js
        │   │   ├── location.js
+       │   │   ├── screen.js
+       │   │   ├── xhr.js
        │   │   └── storage.js
        │   └── fingerprint/
        │       ├── canvas.js
@@ -55,6 +62,9 @@
 
 9. **注释说明“为什么”和“来源”**  
    注释不是逐行翻译代码，而是说明模块职责、浏览器样本来源、RuyiTrace 证据、fixture 匹配规则、addon-first 决策和 fallback 原因。
+
+10. **isolated-vm 也必须文件化模块交付**  
+   isolated-vm 底层确实需要把源码字符串交给 V8，但最终项目不得把补环境源码写成大段 `String.raw`、`CORE_SCRIPT`、`BROWSER_OBJECTS_SCRIPT`、`*_SCRIPT` 聚合字符串。正确做法是把 `navigator.js`、`document.js`、`window.js`、`canvas.js`、`webgl.js` 等作为真实源码文件保存，由宿主侧 runtime 使用 `fs.readFileSync` 读取，再通过 `compileScriptSync(source, { filename })` 或等价方法注入同一个 isolated-vm Context。只有少量 bootstrap 片段允许字符串形式，且必须少于 40 行、不能承载主要 WebAPI 实现，并写明原因。
 
 ## 中文注释要求
 
@@ -106,6 +116,29 @@ function installNavigatorEnv(globalObject, fixture, nativeApi) {
 - 属性描述符、构造函数 callback、WebAPI 方法安装、`Object.assign`、`try/catch` 较长逻辑不得压成一行。
 - 嵌套层级尽量不超过 6 层；复杂逻辑用提前返回或拆函数。
 
+## isolated-vm 文件化加载示例
+
+推荐由 `install-env.js` 只负责装配，由 runtime 顺序读取文件：
+
+```js
+const ENV_FILES = [
+  'src/env/core/descriptors.js',
+  'src/env/browser-objects/window.js',
+  'src/env/browser-objects/navigator.js',
+  'src/env/browser-objects/document.js',
+  'src/env/fingerprint/canvas.js',
+  'src/env/fingerprint/webgl.js',
+];
+
+function installEnv(runtime, config) {
+  runtime.setCopy('__ENV_CONFIG__', config);
+  runtime.runFiles(ENV_FILES);
+  runtime.runFile('src/env/install-all.js');
+}
+```
+
+每个文件都应是正常 JavaScript 文件，文件顶部用中文说明模块职责。Context 内不需要也不应该直接 `require('./navigator.js')`；由宿主 runtime 读取文件内容后注入，既保持 isolated-vm 隔离，又保留源码文件结构、中文注释和 filename 栈定位。
+
 ## 最终交付前检查
 
 交付前必须运行：
@@ -124,6 +157,8 @@ node scripts/check_final_artifact.js --case-dir case --markdown
 | 问题 | 修复方式 |
 |---|---|
 | 单个 `env.js` 太大 | 按 navigator、document、storage、fingerprint 拆模块 |
+| isolated-vm 生成大段 `String.raw` | 改为真实 `.js` 文件，由 runtime.runFile / runtime.runFiles 读取后注入 Context |
+| `script-browser-objects.js` / `script-core.js` 承载主要补环境 | 拆成 `browser-objects/navigator.js`、`document.js`、`window.js`、`fingerprint/canvas.js` 等模块 |
 | 没有中文注释 | 增加文件头、对象说明、来源说明和 fallback 原因 |
 | 中文注释有问号或乱码 | 用 UTF-8 重新写入，避免默认 shell 重定向 |
 | 函数过长 | 拆成解析 fixture、创建构造函数、安装属性、安装实例四步 |

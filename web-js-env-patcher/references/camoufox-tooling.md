@@ -90,6 +90,7 @@ MCP 客户端配置示例：
 - 代理场景按授权启用 `geoip=True`，必要时 `block_webrtc=True`。
 - 不固定窗口、字体、WebGL、locale 等指纹，除非已有真实样本或用户明确要求。
 - 登录态场景使用持久上下文时，把 profile 放入 case 临时目录并标记为敏感材料。
+- 点击、输入、滚动、拖拽使用 Camoufox / Playwright 原生输入路径或 MCP 官方交互能力；不要使用 `page.evaluate(() => dispatchEvent(...))` 作为高风控交互主路径。
 
 Python API 取证示例：
 
@@ -102,6 +103,10 @@ with Camoufox(headless=False, humanize=True, geoip=True, block_webrtc=True) as b
 ```
 
 该示例只能用于前置取证，不得复制到最终 `result/`。
+
+## isTrusted 与可信输入
+
+Camoufox 可以降低自动化和指纹检测风险，但前置取证仍应避免普通 JS 合成事件。鼠标、键盘、拖拽、滚动优先使用 Camoufox 官方 API 的原生输入路径；如果某个流程只能通过 `page.evaluate` 合成事件完成，应先标记 `isTrusted=false` 风险并暂停，让用户选择手动操作、切换到 ruyiPage 的 native BiDi / `ruyi: true`，或在授权范围内接受该风险。
 
 ## MCP 取证流程
 

@@ -36,7 +36,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-- 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”章节。
+- 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”“环境与指纹 API 调用回放明细”“高强度环境检测覆盖矩阵”章节。
 - 必须保留“动态资源保鲜与运行时刷新”“补环境框架选择与 Trace 复杂度评估”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
 - 必须写入 `case/result/最终项目总结.md`；除非用户明确要求不生成，否则 `check_final_artifact.js` 会默认检查该中文命名文件。
 
@@ -47,6 +47,10 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 不要把临时 hook、trace、HAR、浏览器 Profile、截图路径写成最终交付物。
 
 - 最终总结必须引用本 case 已生成的 `case/阶段报告/` 中文阶段报告，例如 `01-需求信息确认.md`、`03-请求样本与可疑参数确认.md`，并说明关键决策来自哪个阶段。
+
+- “环境与指纹 API 调用回放明细”必须按类别分组，例如 `window / global`、`navigator`、`document / DOM`、`canvas`、`webgl` 等；每条记录必须精确到访问的属性、调用的方法、构造函数或 getter / setter，不得只写“补了 navigator / canvas”。
+
+- “高强度环境检测覆盖矩阵”用于记录异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链、MutationObserver、userAgentData、window.chrome、媒体能力、网络 Header / Client Hints 一致性、动态 JS 多版本回归等是否涉及、是否采样、是否已修复和遗留风险。
 
 
 
@@ -319,7 +323,169 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 13. 指纹值回放
+## 13. 环境与指纹 API 调用回放明细
+
+
+
+- 明细文件：`case/notes/webapi-call-replay-details.md` / `case/notes/webapi-call-replay-details.json` / 未生成，原因：
+
+- 数据来源：RuyiTrace NDJSON / Node trace / Proxy trace / Hook / fixture / 静态分析 / 手动确认
+
+- 记录规则：按 API 类别分组；每条精确到属性访问、属性写入、getter、setter、方法调用、构造函数调用或静态方法调用
+
+- 敏感值处理：Cookie / Authorization / token / localStorage 等不写明文，只写脱敏摘要
+
+- 长字段处理：超过采集上限或疑似截断的字段只写可见长度、最小长度、hash 和 `真实长度 unknown`
+
+- API 总数：
+
+- 属性读取数量：
+
+- 属性写入数量：
+
+- getter / setter 数量：
+
+- 方法调用数量：
+
+- 构造函数调用数量：
+
+- 指纹 API 数量：
+
+- 未补齐 API 数量：
+
+- fallback API 数量：
+
+
+
+### 13.1 分类汇总
+
+
+
+| 分类 | 是否涉及 | 典型 API | 属性读取 | 方法调用 | 构造调用 | 指纹 API | 主要证据来源 | 补齐状态 | 备注 |
+|---|---|---|---:|---:|---:|---:|---|---|---|
+| window / global | 未涉及 / 已涉及 | `window.innerWidth`、`globalThis` |  |  |  |  |  |  |  |
+| navigator | 未涉及 / 已涉及 | `navigator.userAgent`、`Navigator.prototype.webdriver` |  |  |  |  |  |  |  |
+| document / DOM | 未涉及 / 已涉及 | `document.createElement`、`document.cookie` |  |  |  |  |  |  |  |
+| location / history | 未涉及 / 已涉及 | `location.href`、`history.pushState` |  |  |  |  |  |  |  |
+| screen | 未涉及 / 已涉及 | `screen.width`、`screen.colorDepth` |  |  |  |  |  |  |  |
+| storage / cookie | 未涉及 / 已涉及 | `localStorage.getItem`、`document.cookie` |  |  |  |  |  |  |  |
+| crypto / random | 未涉及 / 已涉及 | `crypto.getRandomValues`、`Math.random` |  |  |  |  |  |  |  |
+| performance / timing | 未涉及 / 已涉及 | `performance.now`、`Date.now` |  |  |  |  |  |  |  |
+| network | 未涉及 / 已涉及 | `fetch`、`XMLHttpRequest.prototype.open` |  |  |  |  |  |  |  |
+| canvas | 未涉及 / 已涉及 | `HTMLCanvasElement.prototype.getContext`、`toDataURL` |  |  |  |  |  |  |  |
+| webgl | 未涉及 / 已涉及 | `WebGLRenderingContext.prototype.getParameter` |  |  |  |  |  |  |  |
+| webgpu | 未涉及 / 已涉及 | `navigator.gpu`、`GPUAdapter` |  |  |  |  |  |  |  |
+| audio | 未涉及 / 已涉及 | `AudioContext`、`AnalyserNode.prototype.getFloatFrequencyData` |  |  |  |  |  |  |  |
+| font / CSS / DOM geometry | 未涉及 / 已涉及 | `getComputedStyle`、`getBoundingClientRect` |  |  |  |  |  |  |  |
+| events / trusted input | 未涉及 / 已涉及 | `Event.prototype.isTrusted`、`MouseEvent` |  |  |  |  |  |  |  |
+| worker / wasm / postMessage | 未涉及 / 已涉及 | `Worker`、`WebAssembly.instantiate`、`postMessage` |  |  |  |  |  |  |  |
+| 其他 | 未涉及 / 已涉及 |  |  |  |  |  |  |  |  |
+
+
+
+### 13.2 分类明细
+
+
+
+> 未涉及的分类写“未涉及”；涉及的分类必须列出明细。来源为推断时必须标记“静态推断 / 未验证”，不得写成事实。
+
+
+
+#### window / global
+
+
+
+| API 路径 | 类型 | 所属对象 / 原型 | 来源证据 | 调用参数摘要 | 返回值 / 回放值摘要 | 补环境实现 | 真实性保护 | 验证结果 | 备注 |
+|---|---|---|---|---|---|---|---|---|---|
+| 未涉及 |  |  |  |  |  |  |  |  |  |
+
+
+
+#### navigator
+
+
+
+| API 路径 | 类型 | 所属对象 / 原型 | 来源证据 | 调用参数摘要 | 返回值 / 回放值摘要 | 补环境实现 | 真实性保护 | 验证结果 | 备注 |
+|---|---|---|---|---|---|---|---|---|---|
+| `navigator.userAgent` | getter / 属性读取 | `Navigator.prototype` | RuyiTrace / fixture / Hook | 无 | UA 脱敏摘要 | addon / xbs getter / fallback | descriptor + getter toString | 通过 / 未验证 | 示例行，真实报告中按 case 填写 |
+
+
+
+#### document / DOM
+
+
+
+| API 路径 | 类型 | 所属对象 / 原型 | 来源证据 | 调用参数摘要 | 返回值 / 回放值摘要 | 补环境实现 | 真实性保护 | 验证结果 | 备注 |
+|---|---|---|---|---|---|---|---|---|---|
+| `Document.prototype.createElement` | 方法调用 | `Document.prototype` | RuyiTrace / Hook | `"canvas"` | `HTMLCanvasElement` 实例摘要 | addon / xbs native function | 原型链 + function toString | 通过 / 未验证 | 示例行，真实报告中按 case 填写 |
+
+
+
+#### canvas
+
+
+
+| API 路径 | 类型 | 所属对象 / 原型 | 来源证据 | 调用参数摘要 | 返回值 / 回放值摘要 | 补环境实现 | 真实性保护 | 验证结果 | 备注 |
+|---|---|---|---|---|---|---|---|---|---|
+| `HTMLCanvasElement.prototype.getContext` | 方法调用 | `HTMLCanvasElement.prototype` | RuyiTrace / Hook / fixture | `"2d"` | `CanvasRenderingContext2D` 摘要 | addon / xbs native function + fixture replay | native-like + 原型链 | 通过 / 未验证 | 示例行，真实报告中按 case 填写 |
+
+
+
+#### webgl
+
+
+
+| API 路径 | 类型 | 所属对象 / 原型 | 来源证据 | 调用参数摘要 | 返回值 / 回放值摘要 | 补环境实现 | 真实性保护 | 验证结果 | 备注 |
+|---|---|---|---|---|---|---|---|---|---|
+| `WebGLRenderingContext.prototype.getParameter` | 方法调用 | `WebGLRenderingContext.prototype` | RuyiTrace / Hook / fixture | 参数枚举值摘要 | 真实浏览器回放值摘要 | addon / xbs native function + fixture replay | native-like + 原型链 | 通过 / 未验证 | 示例行，真实报告中按 case 填写 |
+
+
+
+#### 其他分类
+
+
+
+按实际涉及的 `location / history`、`screen`、`storage / cookie`、`crypto / random`、`performance / timing`、`network`、`webgpu`、`audio`、`font / CSS / DOM geometry`、`events / trusted input`、`worker / wasm / postMessage` 或其他 WebAPI 分类补充同样表格。
+
+
+
+## 14. 高强度环境检测覆盖矩阵
+
+
+
+- 是否启用高强度环境行为 diff：是 / 否，原因：
+
+- 浏览器基线文件：`case/fixtures/browser-env-baseline.json` / 未生成，原因：
+
+- Node 补环境审计文件：`case/tmp/node-env-audit.json` / 未生成，原因：
+
+- diff 记录：`case/notes/high-intensity-env-diff.md` / 未生成，原因：
+
+- 是否涉及 JSVMP：否 / 是；处理方式：不主动分析源码，仅围绕环境调用、writer 和行为 diff 推进
+
+- 动态风控 JS 多版本回归：未涉及 / 已执行；样本数量：
+
+
+
+| 检测类别 | 是否涉及 | 浏览器基线 | Node 对比 | 修复状态 | 遗留风险 / 说明 |
+|---|---|---|---|---|---|
+| 异常模式指纹 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| Node 泄露与本机路径 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| toString 多通道 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | addon 优先；NativeProtect fallback 需覆盖多通道 |
+| structuredClone / postMessage DataCloneError | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | NativeProtect fallback 需改写 clone error 泄露 |
+| Error stack / eval stack | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| 属性描述符与枚举顺序 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| 原型链 walk 与 brand check | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| MutationObserver / Observer 行为 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| navigator.userAgentData / Client Hints | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| window.chrome | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| canPlayType / mediaSession | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| 网络 Header / Client Hints 一致性 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| 动态 JS 多版本回归 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+
+
+
+## 15. 指纹值回放
 
 
 
@@ -337,24 +503,26 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 14. 加密参数生成与样本复用检查
+## 16. 加密参数生成与样本复用检查
 
 - cURL / HAR / fixture 中的样本加密值是否只作为 expected：
 - 最终入口如何生成参数：目标 JS 入口 / signer / 其他
 - 是否发现硬编码样本值：否
 - `check_final_artifact.js` 复用检查结果：
 
-## 15. 代码质量与中文注释
+## 17. 代码质量与中文注释
 
 - 是否已运行 `check_code_quality.js`：
 - 模块拆分情况：
+- isolated-vm 文件化模块情况：未选择 isolated-vm / 已按真实文件拆分 / 仍存在字符串脚本，原因：
+- isolated-vm 环境模块清单：`src/env/browser-objects/navigator.js` / `document.js` / `window.js` / `src/env/fingerprint/canvas.js` / `webgl.js` / 其他
 - 单文件 / 单函数复杂度：
 - 中文注释覆盖：文件头 / WebAPI / getter / setter / addon-first / fallback / 指纹回放 / 加密入口
 - 中文注释编码：UTF-8 正常 / 存在问题
 - 中文注释是否包含问号、连续问号或乱码：否
 - 修复过的可读性问题：
 
-## 16. TLS 请求验证
+## 18. TLS 请求验证
 
 
 
@@ -374,7 +542,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 17. 最终交付结构
+## 19. 最终交付结构
 
 
 
@@ -390,11 +558,13 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 是否包含临时测试文件：否
 
+- isolated-vm 是否包含大段 `String.raw` / `*_SCRIPT` 补环境源码：否 / 不适用
+
 - 最终请求实现：Node.js / Python TLS 指纹兼容客户端 / 不发真实请求
 
 
 
-## 18. 测试结果
+## 20. 测试结果
 
 
 
@@ -407,13 +577,15 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 补环境真实性检查：
 
+- 高强度环境检测覆盖矩阵检查：
+
 - 最终产物检查：
 
 - 清理 dry-run：
 
 
 
-## 19. 清理结果
+## 21. 清理结果
 
 
 
@@ -427,7 +599,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 20. 风险与后续建议
+## 22. 风险与后续建议
 
 
 

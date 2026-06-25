@@ -2,6 +2,8 @@
 'use strict';
 
 const path = require('path');
+
+const XBS_ISOLATED_VM_COMPATIBLE_NODE_VERSION = '26.3.1';
 const {
   EXPECTED_XBS_APIS,
   createIsolatedVmRuntime,
@@ -33,7 +35,7 @@ function usage() {
     '  node scripts/check_xbs_isolated_vm.js --json',
     '  node scripts/check_xbs_isolated_vm.js --binary <isolated_vm.node> --strict --json',
     '',
-    '说明：检测随包魔改 xbs isolated-vm 是否能在当前 Node / 平台 / ABI 下加载，并在 Context 内自检 window.xbs 的 17 个 API。默认遇到平台缺失或 ABI 不匹配时输出中文解释但不崩溃；真实 case 已选择 isolated-vm 时可加 --strict 作为阻断门禁。',
+    '说明：检测随包魔改 xbs isolated-vm 是否能在当前 Node / 平台 / ABI 下加载，并在 Context 内自检 window.xbs 的 17 个核心 API、xbs.dom.createDocument 和基础 DOM smoke test。默认遇到平台缺失或 ABI 不匹配时输出中文解释但不崩溃；真实 case 已选择 isolated-vm 时可加 --strict 作为阻断门禁。',
   ].join('\n');
 }
 
@@ -49,6 +51,8 @@ function baseResult(args) {
     defaultBinary: getBundledXbsIsolatedVmPath(),
     binaryPath,
     expectedApis: EXPECTED_XBS_APIS.slice(),
+    compatibleNodeVersion: XBS_ISOLATED_VM_COMPATIBLE_NODE_VERSION,
+    requiresUserConfirmation: false,
     loaded: false,
     selfCheckPassed: false,
     abiMismatch: false,
@@ -56,6 +60,7 @@ function baseResult(args) {
     status: 'not-run',
     error: '',
     xbs: null,
+    dom: null,
   };
 }
 
@@ -68,6 +73,7 @@ async function runCheck(args) {
     result.binaryPath = runtime.binaryPath || result.binaryPath;
     const initialized = await runtime.initialize({});
     result.xbs = initialized.xbs || runtime.getXbsApiSummary();
+    result.dom = result.xbs && result.xbs.dom ? result.xbs.dom : null;
     result.selfCheckPassed = !!(result.xbs && result.xbs.ok);
     result.status = result.selfCheckPassed ? 'ok' : 'xbs-api-missing';
     if (!result.selfCheckPassed) result.error = '已加载二进制，但 Context 内 window.xbs 自检未通过。';
@@ -76,6 +82,19 @@ async function runCheck(args) {
     result.abiMismatch = isAbiMismatch(error) || !!(error && error.abiMismatch);
     result.explainableFailure = result.abiMismatch || /未找到 isolated_vm\.node|未找到|no such file|cannot find/i.test(result.error);
     result.status = result.abiMismatch ? 'abi-mismatch' : (result.explainableFailure ? 'binary-missing' : 'load-failed');
+    result.requiresUserConfirmation = !!result.abiMismatch;
+    if (result.abiMismatch) {
+      result.recovery = {
+        rule: '不得直接改用 npm 原版 isolated-vm，也不得桥接旧 addon.node；先询问用户是否通过 nvm 安装 / 切换兼容 Node。',
+        commands: [
+          `nvm install ${XBS_ISOLATED_VM_COMPATIBLE_NODE_VERSION}`,
+          `nvm use ${XBS_ISOLATED_VM_COMPATIBLE_NODE_VERSION}`,
+          'node -v',
+          'node -p "process.versions.modules"',
+          'node --no-node-snapshot scripts/check_xbs_isolated_vm.js --strict --json',
+        ],
+      };
+    }
   } finally {
     if (runtime && typeof runtime.dispose === 'function') await runtime.dispose().catch(() => {});
   }
@@ -91,15 +110,26 @@ function renderMarkdown(result) {
   lines.push('- 状态：' + result.status);
   lines.push('- 当前 Node：' + result.nodeVersion);
   lines.push('- 当前 ABI：' + result.nodeAbi);
+  lines.push('- xbs isolated-vm 兼容 Node：v' + (result.compatibleNodeVersion || XBS_ISOLATED_VM_COMPATIBLE_NODE_VERSION));
   lines.push('- 当前平台：' + result.platformKey);
   lines.push('- 二进制路径：' + result.binaryPath);
   lines.push('- 是否加载成功：' + (result.loaded ? '是' : '否'));
-  lines.push('- Context 内 xbs API 自检：' + (result.selfCheckPassed ? '通过' : '未通过'));
+  lines.push('- Context 内 xbs API + DOM 自检：' + (result.selfCheckPassed ? '通过' : '未通过'));
   if (result.xbs) {
     lines.push('- window === globalThis：' + (result.xbs.windowIsGlobal ? '是' : '否'));
     lines.push('- window instanceof Window：' + (result.xbs.windowInstanceOfWindow ? '是' : '否'));
-    lines.push('- 缺失 API：' + (result.xbs.missing && result.xbs.missing.length ? result.xbs.missing.join('、') : '无'));
+    lines.push('- 缺失核心 API：' + (result.xbs.missing && result.xbs.missing.length ? result.xbs.missing.join('、') : '无'));
     lines.push('- 额外 API：' + (result.xbs.extra && result.xbs.extra.length ? result.xbs.extra.join('、') : '无'));
+    lines.push('- xbs.dom：' + (result.xbs.hasXbsDom ? '存在' : '不存在'));
+    lines.push('- xbs.dom.createDocument：' + (result.xbs.hasCreateDocument ? '可用' : '不可用'));
+    if (result.xbs.dom) {
+      lines.push('- DOM smoke test：' + (result.xbs.dom.ok ? '通过' : '未通过'));
+      lines.push('- document.constructor.name：' + (result.xbs.dom.documentCtor || '未知'));
+      lines.push('- document 默认预挂载到 window：' + (result.xbs.dom.windowDocumentWasPreinstalled ? '是' : '否'));
+      lines.push('- document.all 类型：' + (result.xbs.dom.allType || '未知'));
+      lines.push('- omitApis 禁用 document.all：' + (result.xbs.dom.omitAllWorks ? '通过' : '未通过'));
+      lines.push('- iframe contentDocument：' + (result.xbs.dom.iframeContentDocument ? '可用' : '未确认'));
+    }
   }
   if (result.error) {
     lines.push('');
@@ -111,8 +141,23 @@ function renderMarkdown(result) {
     lines.push('');
     lines.push('## 处理建议');
     lines.push('');
-    lines.push('- 如果用户已选择 isolated-vm，请让用户提供与当前平台 / 架构 / Node ABI 匹配的魔改 xbs isolated-vm 构建产物，或切换匹配 Node 版本。');
-    lines.push('- 不要自动降级到 npm 原版 isolated-vm；如用户不想提供匹配二进制，应让用户改选不使用框架 / Node.js 内置 vm / jsEnv。');
+    if (result.abiMismatch) {
+      lines.push('- ABI 不兼容时不要直接降级。先让用户确认是否通过 nvm 安装 / 切换 Node.js v' + (result.compatibleNodeVersion || XBS_ISOLATED_VM_COMPATIBLE_NODE_VERSION) + '。');
+      lines.push('- 用户拒绝切换 Node 时，再让用户提供当前平台 / 架构 / Node ABI 匹配的魔改 xbs isolated-vm 构建产物，或改选不使用框架 / Node.js 内置 vm / jsEnv。');
+    } else {
+      lines.push('- 如果用户已选择 isolated-vm，请让用户提供与当前平台 / 架构 / Node ABI 匹配的魔改 xbs isolated-vm 构建产物，或按 Node 兼容恢复流程切换匹配版本。');
+    }
+    lines.push('- 不要自动降级到 npm 原版 isolated-vm，也不要桥接旧 addon.node。');
+  }
+  if (result.recovery && result.recovery.commands) {
+    lines.push('');
+    lines.push('## ABI 恢复命令');
+    lines.push('');
+    lines.push(result.recovery.rule);
+    lines.push('');
+    lines.push('```bash');
+    for (const cmd of result.recovery.commands) lines.push(cmd);
+    lines.push('```');
   }
   return lines.join('\n') + '\n';
 }

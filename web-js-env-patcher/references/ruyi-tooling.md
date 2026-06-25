@@ -53,6 +53,14 @@
 
 用户未选择前，不要直接启动浏览器工具；用户选择后，后续所有浏览器取证动作都必须沿用该选择，不能临时 fallback 到普通 Playwright、Puppeteer 或系统 Firefox。
 
+## 验证码场景的 RuyiTrace 覆盖
+
+如果目标是验证码 / 风控验证 / challenge / WAF 接口，RuyiTrace 自动捕获或手动捕获都必须覆盖完整链路：触发验证码、验证码组件初始化、用户交互事件、加密参数生成、verify / validate / challenge 接口发起、结果回调。
+
+- 用户提供完整流程时，自动捕获脚本应按该流程执行；若流程需要人工识别、登录、验证码答案或权限交互，暂停让用户完成。
+- 用户选择自己完成流程时，先启动 RuyiTrace 记录，再让用户操作；只有用户回复“已经完成触发到验证流程”后，才停止记录并导入 NDJSON。
+- 如果 `notes/ruyitrace-summary.md` 只覆盖页面加载、没有交互事件或 verify 接口附近调用栈，应要求重新采集，不得直接进入补环境。
+
 ## 本机工具检测
 
 先运行检测脚本：
@@ -218,8 +226,31 @@ node scripts/download_ruyi_tool.js --tool ruyipage-firefox --dest <download-dir>
 | 取证时机 | `page.capture.start(...)` 必须在 `page.get(...)` 之前执行 |
 | 自检 | 导航后检查 `navigator.webdriver`，期望为 `false`；若为 `true`，判定当前取证不合格 |
 | 验收 | 目标接口必须捕获到非失败响应；对跨域接口不要把单独的 `OPTIONS` preflight 当作业务取证成功 |
+| isTrusted | 点击、拖拽、鼠标、键盘、滚动优先使用原生 BiDi / human actions；确需 JS 构造事件时必须带 `ruyi: true`；普通 `dispatchEvent` 不视为可信输入 |
 
 这些约束只能降低普通自动化 / CDP / 指纹检测风险，不能保证绕过所有业务风控、登录、验证码、MFA、设备验证或服务端策略。
+
+### ruyiPage isTrusted 交互规则
+
+高风控点击、拖拽、键盘输入、滚动和验证码交互优先使用 ruyiPage 原生 BiDi / human actions：
+
+```python
+page.actions.move_to(page.ele("#btn")).click().perform()
+page.actions.drag(page.ele("#source"), page.ele("#target"), duration=640, steps=16).perform()
+page.actions.release()
+page.actions.human_move(ele, algorithm="windmouse").perform()
+page.actions.human_click(ele, algorithm="windmouse").perform()
+```
+
+如果必须构造 JS 事件，只允许使用 ruyiPage 的 `ruyi: true` 特定能力，并在取证报告中说明事件类型和参数：
+
+```javascript
+new MouseEvent('click', { bubbles: true, clientX: 12, clientY: 24, ruyi: true });
+new KeyboardEvent('keydown', { bubbles: true, key: 'Enter', code: 'Enter', ruyi: true });
+new PointerEvent('pointerdown', { bubbles: true, pointerId: 1, clientX: 3, clientY: 5, ruyi: true });
+```
+
+普通 `dispatchEvent(new MouseEvent(...))`、`new KeyboardEvent(...)` 不得作为验证码或高风控交互主路径。无法保证可信输入时，暂停并让用户手动完成或切换工具。
 
 示例骨架：
 

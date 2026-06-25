@@ -46,9 +46,22 @@
 - 用户未明确要求关闭真实性保护；默认会对新增 WebAPI 执行属性描述符、访问器、原型链、函数 / 访问器 / 实例对象 toString 保护。
 - 已经执行六项纯计算预检，或明确该目标不依赖相关差异。
 - 如果目标访问 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API，已经采集或计划采集真实浏览器终端 API 返回值；缺少样本时不得进入“静默伪造默认值”的交付模式。
+- 如果目标是验证码接口，已确认事件轨迹 fixture 或旧轨迹样本来源，并明确该轨迹只用于补环境生成加密参数，不代表最终验证码验证成功。
 - 用户已确认进入 Node.js 补环境阶段。
 
 如果缺少任一关键条件，先回到 `workflow.md` 的前置流程，不要直接写 `env.js`。
+
+## 验证码事件轨迹 fixture 门禁
+
+验证码接口补环境时，如果加密参数依赖鼠标、点击、拖动、触摸、滚轮或键盘事件，先使用浏览器取证得到的旧轨迹 fixture 跑通参数生成。该阶段目标是让目标 JS 在 Node.js 中生成加密参数，不要求验证码最终验证通过。
+
+硬性要求：
+
+- 将轨迹设计为可替换入口，例如 `motionTrack`、`eventFixture`、`verifyContext`、`clickPoints`、`dragPath`。
+- 推荐保存到 `case/fixtures/motion.fixture.json` 或 `case/result/src/verify/motion-track.js`。
+- 代码中必须有 UTF-8 中文注释，说明旧轨迹来源、用途和后续由 `web-verify-patcher` 替换。
+- 不得把旧轨迹硬编码成不可替换逻辑，不得宣称旧轨迹能稳定通过验证码。
+- 生成验证码加密参数后，如需识别图片、生成真实轨迹、坐标换算或提交验证，先运行 `scripts/check_web_verify_patcher.js --require --markdown`，确认 `web-verify-patcher` 可用后再交接。
 
 ## RuyiTrace 优先诊断门禁
 
@@ -184,11 +197,12 @@ node scripts/run_with_trace.js \
 9. 如果 trace 或 NDJSON 显示 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何指纹，先读取 `fingerprint-value-replay.md`，生成采样 Hook，采集 `fixtures/fingerprint.fixture.json`，再接入 `assets/env-modules/fingerprint-env.js` 做终端 API 值回放。
 10. 按 RuyiTrace 证据 + Node trace 补充结论，分 Level 1/2/3 补齐环境。
 11. 发现 Proxy、toString、descriptor、accessor、prototype、instanceof、constructor.name 或 `document.all` 检测信号时，迁移到真实对象 / addon-first 模式；addon 不可用时才使用 NativeProtect fallback。
-12. 调用加密入口。
-13. 和浏览器样本对比；如果缺少指纹样本，补采样而不是改用自动化浏览器。
-14. 多样本通过后整理规范项目目录，把补环境、入口调用、参数生成和最终 Node.js / Python 请求逻辑串联到唯一入口 `result/final.js` 或 `result/final.py`；必要模块可放入 `result/src/`。
-15. 先运行 `check_env_realism.js --require-addon-first`，确认原型链、属性描述符、访问器、toString 保护、实例对象 toString 保护、addon-first/native fallback 记录、document.all、RuyiTrace 证据和指纹值回放证据；再运行 `check_fingerprint_fixture.js` 与 `check_final_artifact.js`，确认最终主文件不含 ruyiPage / Playwright / Puppeteer / Selenium / CloakBrowser 等自动化代码。
-16. 清理 trace、临时日志、失败 runner、测试脚本、指纹采样 Hook 和多余文件。
+12. 如果是验证码接口，先注入可替换的 `motionTrack` / `eventFixture` 旧轨迹 fixture，仅用于生成验证码接口加密参数。
+13. 调用加密入口。
+14. 和浏览器样本对比；如果缺少指纹样本，补采样而不是改用自动化浏览器。
+15. 多样本通过后整理规范项目目录，把补环境、入口调用、参数生成和最终 Node.js / Python 请求逻辑串联到唯一入口 `result/final.js` 或 `result/final.py`；必要模块可放入 `result/src/`。
+16. 先运行 `check_env_realism.js --require-addon-first`，确认原型链、属性描述符、访问器、toString 保护、实例对象 toString 保护、addon-first/native fallback 记录、document.all、RuyiTrace 证据和指纹值回放证据；再运行 `check_fingerprint_fixture.js` 与 `check_final_artifact.js`，确认最终主文件不含 ruyiPage / Playwright / Puppeteer / Selenium / CloakBrowser 等自动化代码。
+17. 清理 trace、临时日志、失败 runner、测试脚本、指纹采样 Hook 和多余文件。
 ```
 
 ## 错误分类

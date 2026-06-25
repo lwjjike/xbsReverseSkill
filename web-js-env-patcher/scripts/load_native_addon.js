@@ -4,6 +4,8 @@
 const fs = require('fs');
 const path = require('path');
 
+const ADDON_COMPATIBLE_NODE_VERSION = '25.8.1';
+
 const REQUIRED_EXPORTS = [
   'createNativeObject',
   'createNativeFunction',
@@ -71,6 +73,10 @@ function candidatePaths(explicitPath) {
   return [...new Set(out)];
 }
 
+function isAbiMismatchMessage(message) {
+  return /NODE_MODULE_VERSION|different Node\.js version|compiled against|Module did not self-register|The module was compiled/i.test(String(message || ''));
+}
+
 function loadNativeAddon(options = {}) {
   const paths = candidatePaths(options.addon || options.path || '');
   const attempts = [];
@@ -93,12 +99,17 @@ function loadNativeAddon(options = {}) {
         arch: process.arch,
         node: process.version,
         modules: process.versions.modules,
+        abiMismatch: false,
+        compatibleNodeVersion: ADDON_COMPATIBLE_NODE_VERSION,
+        requiresUserConfirmation: false,
         attempts,
       };
     } catch (err) {
-      attempts.push({ path: p, ok: false, reason: err && err.message ? err.message : String(err) });
+      const reason = err && err.message ? err.message : String(err);
+      attempts.push({ path: p, ok: false, reason, abiMismatch: isAbiMismatchMessage(reason) });
     }
   }
+  const abiMismatch = attempts.some(a => a.abiMismatch || isAbiMismatchMessage(a.reason));
   return {
     available: false,
     addon: null,
@@ -109,8 +120,23 @@ function loadNativeAddon(options = {}) {
     arch: process.arch,
     node: process.version,
     modules: process.versions.modules,
+    abiMismatch,
+    compatibleNodeVersion: ADDON_COMPATIBLE_NODE_VERSION,
+    requiresUserConfirmation: abiMismatch,
     attempts,
-    reason: '未找到可加载的 addon.node，或当前平台 / Node ABI 不兼容',
+    reason: abiMismatch
+      ? `addon.node 与当前 Node ABI 不兼容；兼容 Node.js 版本为 v${ADDON_COMPATIBLE_NODE_VERSION}`
+      : '未找到可加载的 addon.node，或当前平台缺少随包产物',
+    recovery: abiMismatch ? {
+      rule: '不得直接降级；先询问用户是否通过 nvm 安装 / 切换兼容 Node。用户拒绝后才允许 NativeProtect / JS fallback。',
+      commands: [
+        `nvm install ${ADDON_COMPATIBLE_NODE_VERSION}`,
+        `nvm use ${ADDON_COMPATIBLE_NODE_VERSION}`,
+        'node -v',
+        'node -p "process.versions.modules"',
+        'node scripts/load_native_addon.js --json',
+      ],
+    } : null,
   };
 }
 
@@ -129,12 +155,24 @@ function renderMarkdown(result) {
   lines.push(`- Node ABI：${result.modules}`);
   if (result.path) lines.push(`- 加载路径：${result.path}`);
   if (result.reason) lines.push(`- 原因：${result.reason}`);
+  lines.push(`- addon 兼容 Node：v${result.compatibleNodeVersion || ADDON_COMPATIBLE_NODE_VERSION}`);
+  if (result.abiMismatch) lines.push('- ABI 不兼容：是，必须先征得用户同意是否通过 nvm 安装 / 切换兼容 Node，不得直接降级');
   if (result.exports && result.exports.length) lines.push(`- 导出 API：${result.exports.join(', ')}`);
   if (result.missingExports && result.missingExports.length) lines.push(`- 缺少预期 API：${result.missingExports.join(', ')}`);
   if (result.attempts && result.attempts.length) {
     lines.push('');
     lines.push('## 尝试记录');
-    for (const a of result.attempts) lines.push(`- ${a.path}：${a.reason}`);
+    for (const a of result.attempts) lines.push(`- ${a.path}：${a.reason}${a.abiMismatch ? '（疑似 ABI 不兼容）' : ''}`);
+  }
+  if (result.recovery && result.recovery.commands) {
+    lines.push('');
+    lines.push('## ABI 恢复流程');
+    lines.push('');
+    lines.push(result.recovery.rule);
+    lines.push('');
+    lines.push('```bash');
+    for (const cmd of result.recovery.commands) lines.push(cmd);
+    lines.push('```');
   }
   return lines.join('\n') + '\n';
 }
@@ -155,4 +193,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { loadNativeAddon, REQUIRED_EXPORTS };
+module.exports = { loadNativeAddon, REQUIRED_EXPORTS, ADDON_COMPATIBLE_NODE_VERSION, isAbiMismatchMessage };

@@ -187,7 +187,14 @@
    ```
 
 
-10. **必须交付前检查**  
+10. **验证码接口的轨迹入口必须可替换**
+
+   如果目标是验证码 / 风控验证接口，并且加密参数依赖点击、鼠标移动、拖动或触摸事件，最终项目允许保留旧轨迹 fixture 作为参数生成输入，但必须暴露可替换入口，例如 `motionTrack`、`eventFixture`、`verifyContext`、`clickPoints` 或 `dragPath`，并使用 UTF-8 中文注释说明“当前旧轨迹只用于补环境生成加密参数，不保证最终验证通过，后续识别和真实轨迹生成交给 web-verify-patcher”。
+
+   不得把旧轨迹硬编码在 signer 内部，不得把验证码最终通过率写成 web-js-env-patcher 的交付结论。调用 `web-verify-patcher` 前必须先运行 `check_web_verify_patcher.js --require`。
+
+
+11. **必须交付前检查**  
 
    交付前运行：
 

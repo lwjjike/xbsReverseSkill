@@ -136,6 +136,7 @@ Object.defineProperty(Navigator.prototype, 'userAgent', {
 | `deviceMemory` | 来自浏览器样本或用户确认 |
 | `webdriver` | 普通浏览器通常应为 `false` 或不存在，取决于目标环境 |
 | `plugins` / `mimeTypes` | 优先真实采集，addon 可用时优先 `getMimeTypesAndPlugins()` |
+| `userAgentData` | 来自浏览器样本；`brands/fullVersionList/platform/mobile/getHighEntropyValues` 必须与请求头 Client Hints 一致 |
 
 补 `navigator` 时不要先手写普通 `function Navigator(){}` 作为主路径。推荐：
 
@@ -146,6 +147,24 @@ Object.defineProperty(Navigator.prototype, 'userAgent', {
 5. addon 不可用时，才使用 JS 构造函数 + `Object.defineProperty` + `NativeProtect` fallback。
 
 不要只补返回值。getter 的 `Function.prototype.toString.call(descriptor.get)`、实例的 `Object.prototype.toString.call(navigator)`、`navigator.constructor.name` 都属于默认真实性基线。
+
+`navigator.userAgentData` 是高强度检测重点。进入补环境范围时必须采样真实浏览器：
+
+- `brands`、`mobile`、`platform`、`toJSON`。
+- `getHighEntropyValues()` 的 Promise 行为、参数校验、返回字段和错误模式。
+- `architecture`、`bitness`、`model`、`platformVersion`、`uaFullVersion`、`fullVersionList` 等字段。
+- 与最终请求头 `User-Agent`、`sec-ch-ua`、`sec-ch-ua-mobile`、`sec-ch-ua-platform` 保持一致；不一致时先修正 fixture 和请求头，不要只改 JS 层。
+
+## window.chrome 与 Chrome 专有对象
+
+如果目标检测 `window.chrome`，不要只补空对象。按目标浏览器版本采样后再决定是否提供：
+
+- `chrome.app`
+- `chrome.csi`
+- `chrome.loadTimes`
+- `chrome.runtime`
+
+这些属性的 key、descriptor、函数 `name/length/toString`、返回对象结构都可能被检测。旧 Chrome API 不要盲目全补；版本不匹配也会形成指纹。addon / xbs 可用时，相关函数仍优先 native-first；fallback 才用 `NativeProtect`。
 
 ## location
 
@@ -190,6 +209,18 @@ EventTarget → Node → Document → HTMLDocument
 `document.cookie` 必须作为 accessor descriptor 处理。即使当前样本只读取 cookie，也建议同时准备最小 setter，setter 可以只实现当前 case 需要的写入、覆盖和过期策略，但不得把 cookie 做成普通 data 属性。getter / setter 优先 addon；fallback 才用 `NativeProtect` 保护访问器函数。
 
 DOM 方法如 `createElement`、`querySelector`、`querySelectorAll`、`getElementById` 进入补环境范围后，优先用 `addon.createNativeFunction`，并挂在正确 prototype 上。
+
+`document.createElement(tag)` 不能统一返回普通对象。进入补环境范围的 tag 必须映射到正确构造链，例如：
+
+| tag | 期望实例与原型链 |
+|---|---|
+| `canvas` | `HTMLCanvasElement → HTMLElement → Element → Node → EventTarget → Object` |
+| `video` | `HTMLVideoElement → HTMLMediaElement → HTMLElement → Element → Node → EventTarget → Object` |
+| `audio` | `HTMLAudioElement → HTMLMediaElement → HTMLElement → Element → Node → EventTarget → Object` |
+| `img` / `image` | `HTMLImageElement → HTMLElement → Element → Node → EventTarget → Object` |
+| `a` | `HTMLAnchorElement → HTMLElement → Element → Node → EventTarget → Object` |
+
+同时验证 `constructor.name`、`instanceof`、`Object.prototype.toString.call(element)`、`Symbol.toStringTag`、`Object.getPrototypeOf` walk、跨原型方法 brand check，例如 `HTMLElement.prototype.getAttribute.call(video, "src")`。
 
 ## `document.all`
 
@@ -344,6 +375,25 @@ ctx.TextEncoder = globalThis.TextEncoder;
 | `Image` / `HTMLImageElement` / `Worker` | 不要用普通 function 临时返回普通对象；需要 `HTMLElement → HTMLImageElement`、`EventTarget → Worker` 链路，`postMessage/terminate/addEventListener` native-like。 |
 
 直接复用 Node 宿主对象也属于风险写法。`TextEncoder`、`TextDecoder`、`URL`、`URLSearchParams`、`fetch`、`Headers`、`Request`、`Response`、`WebAssembly`、Streams、Events、`crypto` 等如果参与目标检测，不能简单写成 `ctx.X = globalThis.X`；必须按浏览器样本和目标调用范围建立可控实现，或明确记录不可用原因。
+
+### MutationObserver 行为最低要求
+
+如果目标实际调用 `MutationObserver`，不能只补构造函数空壳。至少按 fixture 支持：
+
+- `new MutationObserver(callback)` 的参数校验。
+- `observe(target, options)`、`disconnect()`、`takeRecords()`。
+- `attributes`、`attributeOldValue`、`attributeFilter` 的最小行为。
+- DOM 属性变化后 callback 的异步触发顺序。
+- `MutationRecord` 的 `type`、`target`、`attributeName`、`oldValue`。
+- 参数错误时的错误类型、message 和 stack 首行按浏览器采样。
+
+### 媒体能力最低要求
+
+如果目标访问媒体能力，优先采样并回放：
+
+- `HTMLMediaElement.prototype.canPlayType` 对 mp4、webm、ogg、hls 等 MIME / codecs 的返回值：`""`、`"maybe"`、`"probably"`。
+- `navigator.mediaSession` 的对象结构、descriptor、`Object.prototype.toString` 和相关方法。
+- `AudioContext` / `OfflineAudioContext` 指纹输出仍按真实浏览器采样值回放。
 
 交付前必须运行：
 

@@ -46,7 +46,27 @@
 
 如果所选工具不可用、路径缺失、runtime 不合格、需要登录、或后续必须更换工具，必须暂停并让用户确认，不得自动 fallback 到普通系统 Firefox、普通 Playwright、Puppeteer 或非 Camoufox 的 Playwright Firefox。
 
-详细 ruyiPage / RuyiTrace 流程见 `ruyi-tooling.md`；详细 Camoufox 流程见 `camoufox-tooling.md`。
+详细 ruyiPage / RuyiTrace 流程见 `ruyi-tooling.md`；详细 Camoufox 流程见 `camoufox-tooling.md`；自动点击、拖拽、键盘、滚动和验证码交互的 `isTrusted` 可信输入规则见 `trusted-input-and-isTrusted.md`。
+
+## isTrusted 与原生输入硬约束
+
+当取证阶段需要点击、鼠标移动、拖拽、键盘输入、滚动或验证码交互时，必须先按已确认工具选择可信输入路径：
+
+- ruyiPage：优先 `page.actions` 原生 BiDi 动作链、`human_move`、`human_click`、`drag`；如果必须构造 JS 事件，必须使用 ruyiPage 特定的 `ruyi: true`。
+- Camoufox：从启动开始 `humanize=True`，交互使用 Camoufox / Playwright 风格原生输入接口或 MCP 官方交互能力，不把 `page.evaluate(() => dispatchEvent(...))` 作为主路径。
+- CloakBrowser：从启动开始 `humanize=True`，使用官方包装器 patch 后的 click / type / drag / scroll 等方法；如果退回 `page.evaluate` 合成事件，视为 `isTrusted=false` 风险并暂停确认。
+- 用户手动：登录、MFA、验证码答案和高风险验证优先让用户在已确认取证浏览器中手动完成。
+
+普通 `dispatchEvent(new MouseEvent(...))`、`new KeyboardEvent(...)`、`new PointerEvent(...)` 默认是高风险合成事件，不能作为验证码或高风控交互的主路径。无法保证可信输入时，暂停并让用户选择手动完成、切换工具或明确接受风险。
+
+## 验证码接口取证门禁
+
+信息完整并确认任务后、任何取证动作前，先确认目标是否为验证码 / 风控验证 / challenge / WAF 接口。若是，必须读取 `captcha-flow-and-verify-handoff.md` 并让用户选择取证方式：
+
+1. 用户提供从触发到验证的完整流程，AI 使用已确认取证工具自动完成最小必要交互和取证。
+2. 用户自己在取证浏览器中完成触发到验证，AI 只负责提前开启网络捕获、Hook、截图或 Trace，并等待用户回复“已经完成触发到验证流程”。
+
+验证码场景不得只打开页面首屏就宣称取证完成；必须覆盖触发、展示、交互、点击验证 / 提交、verify 接口返回和结果回调。需要登录、验证码答案、MFA、账号授权或人工判断时暂停，让用户手动完成，不要尝试绕过。
 
 ## ruyiPage / RuyiTrace 定位
 
@@ -92,6 +112,7 @@ ruyiPage 的价值在于使用 Firefox + WebDriver BiDi，并配合其 managed r
 - `page.capture.start(...)` 先于 `page.get(...)`。
 - 导航后验证 `navigator.webdriver === false`。
 - 对跨域接口，不能把单独的 `OPTIONS` preflight 当作业务取证成功。
+- 自动交互优先使用 `page.actions` 原生 BiDi / human actions；确需 JS 事件时必须带 `ruyi: true`，普通 `dispatchEvent` 不视为可信输入。
 
 如果任一硬约束失败，暂停并说明原因；不要自动切回普通 Playwright / Puppeteer / 系统 Firefox。
 
@@ -160,6 +181,7 @@ node scripts/check_external_tools.js --python python --require-camoufox --requir
 - 不要固定窗口尺寸、字体、WebGL 等指纹值，除非有真实样本或目标调试需要；固定值可能造成指纹分布异常。
 - 高风险或需要登录态时，优先使用持久上下文，并将 profile 放在 case 临时目录，结束后按敏感 Profile 处理。
 - MCP 模式先调用 `check_environment`，再 `launch_browser(headless=false, humanize=true, geoip=true, block_webrtc=true)`；需要属性访问日志时才加 `enable_trace=true`，并记录 trace 文件位置。
+- 鼠标、键盘、拖拽和滚动使用 Camoufox / MCP 原生输入路径；不要用 `page.evaluate` 合成事件作为高风控交互主路径。
 
 仅 Camoufox Python API 示例只用于前置取证，不得复制进最终 `result/`：
 
@@ -283,6 +305,7 @@ npm install cloakbrowser puppeteer-core
 - 如用户授权使用代理，才配置 `proxy`；需要让时区、语言、WebRTC 与出口 IP 保持一致时再启用 `geoip: true` / `geoip=True`。
 - 高风控、需要登录态、或目标检测空白无痕 Profile 时，优先使用 `launchPersistentContext` / `launch_persistent_context`，并把 Profile 放到 `case/tmp/cloak-profile/`。Profile 可能含登录态，清理前必须询问用户。
 - 减少 `page.evaluate`、大量 `waitForTimeout`、异常鼠标轨迹等会增加可见自动化信号的动作；只执行最小必要业务动作。
+- 点击、输入、滚动、拖拽必须走 CloakBrowser humanize / 官方交互方法；如果工具退回 `page.evaluate` 合成事件，视为 `isTrusted=false` 风险并暂停确认。
 - 出现登录、验证码、MFA、设备验证时暂停，让用户手动完成；不要破解或绕过。
 - CloakBrowser 只用于前置取证。最终交付项目中不得包含 CloakBrowser / Playwright / Puppeteer / CDP / WebDriver 自动化代码。
 
