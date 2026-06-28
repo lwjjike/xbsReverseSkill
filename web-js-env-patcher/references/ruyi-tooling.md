@@ -29,7 +29,7 @@
    - navigator / screen / document / storage / canvas / WebGL / audio / crypto / performance / worker / iframe 等环境模块分类。
 5. 只有在 NDJSON 缺失、未覆盖当前路径、日志时间段不对应、或日志结论不足时，才使用 `run_with_trace.js`、Proxy trace、Hook 或断点作为补充。
 6. 输出补环境计划时，必须标明哪些环境依赖来自 RuyiTrace 证据，哪些只是 Node trace / 推断，避免把推断写成事实。
-7. RuyiTrace 长字符串字段可能被截断。导入日志后，如果任意字符串字段达到或接近 4000 字符，必须标记为疑似截断：真实长度写 `unknown`，最小长度写可见长度，不能把 4000 或可见长度解释为加密参数真实长度。
+7. RuyiTrace 长字符串字段可能被截断。导入日志后，如果任意字符串字段达到或接近 4000 字符，必须标记为疑似截断：真实长度写 `unknown`，最小长度写可见长度，不能把 4000 或可见长度解释为加密参数或指纹值真实长度。涉及 WebAPI / 指纹具体值时，未截断 RuyiTrace 值优先；RuyiTrace 未选择、缺失、未覆盖或疑似截断时，必须使用当前用户确认的取证工具在同一 fingerprint baseline 下补采完整值，不能由 AI 猜值。
 
 如果用户选择了 ruyiPage + RuyiTrace 但尚无日志，不能默认等待用户手动 trace。应先检测 RuyiTrace 是否已安装；检测通过后优先用 `scripts/capture_ruyitrace_log.js` 自动启动随 RuyiTrace 提供的 trace Firefox 捕获 NDJSON，再导入摘要。只有自动捕获失败、需要登录 / 验证 / 权限交互、目标路径未覆盖、工具不可控，或用户明确选择手动取证时，才暂停并让用户手动协助采集 / 提供 NDJSON；用户明确确认无法提供后，才降级为 ruyiPage 网络证据 + Node trace 流程。
 
@@ -392,9 +392,12 @@ node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --tr
   2. ruyiPage `collect_bodies=True` 网络抓包。
   3. 专用 Hook 对 writer 或加密入口做分片落盘，并记录完整长度、SHA256、前后片段。
   4. 最终 Node.js signer 输出，并与浏览器样本的完整长度或 hash 对比。
-- 写入 `notes/missing-env-priority.md`、阶段报告或最终总结时，必须区分“RuyiTrace 可见值”和“其他来源补采完整值”。
+- 写入 `notes/missing-env-priority.md`、阶段报告或最终总结时，必须区分“RuyiTrace 未截断可用值”“RuyiTrace 可见但疑似截断值”和“其他来源补采完整值”。
+- 对 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何、`navigator`、`screen`、`window`、`document` 等具体值：RuyiTrace 未截断值是优先来源；只要日志缺失、未覆盖或疑似截断，就改用已确认的 ruyiPage / Camoufox / CloakBrowser / 手动浏览器采样，并记录 `baselineId`、`capturedBy`、完整长度和 hash。不得把 AI 猜值、静态推断或 Node.js 模拟库结果写入最终 fixture。
 
 摘要中出现 `## 长字段截断风险` 时，后续分析要先处理完整值补采问题，再判断参数长度、结构、hash、编码或是否可复现。
+
+如果截断字段是指纹 / WebAPI 返回值，例如 dataURL、WebGL 参数、字体探测结果、DOM 序列化结果或 Audio buffer 摘要，不得把 trace 可见片段直接写入 `fingerprint.fixture.json` 的最终 `result`；必须使用同一 case 已确认取证工具补采完整值，或显式阻塞等待用户提供完整真实浏览器材料。
 
 ## 根据 RuyiTrace 日志补环境
 

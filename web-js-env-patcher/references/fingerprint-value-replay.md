@@ -9,7 +9,9 @@
 必须遵循：
 
 - **指纹基线先固定**：采样前先读取 `fingerprint-baseline-consistency.md`，确认 `case/notes/fingerprint-baseline.json` 和 `baselineId` 已创建；所有采样必须来自同一 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 基线。
-- **真实浏览器采样优先**：用已确认取证模式采集真实浏览器最终返回值、调用参数、调用栈和调用顺序。
+- **Trace 未截断值优先**：如果用户选择 / 提供了 RuyiTrace 或其他 trace 日志，先使用 trace 中未截断、与当前 `baselineId` 一致、能确认完整性的真实浏览器值。
+- **Trace 不可用再采样**：未选择 trace、trace 缺失、trace 未覆盖目标路径、trace 字符串达到或接近 4000 字符疑似截断、真实长度为 `unknown`、或 trace baseline 冲突时，必须使用用户当前确认的取证工具采集真实浏览器最终返回值、调用参数、调用栈和调用顺序。
+- **禁止 AI 猜指纹值**：AI 经验、静态分析、默认值、随机值、mock 值、Node.js / jsdom / node-canvas / headless-gl 的结果不能作为最终指纹回放值，只能辅助定位和设计采样点。
 - **终端 API 值回放优先**：在 Node.js 中拦截目标真正读取指纹结果的 API，并返回采样值。
 - **不真实模拟渲染过程**：不要为了 Canvas / WebGL / 字体 / DOM 几何去强行复现 Skia、GPU、字体栅格化、抗锯齿、颜色管理或浏览器布局。
 - **不退回自动化作为最终方案**：Node.js 无法真实渲染时，不得建议把最终生成参数或最终验证改成浏览器自动化；自动化只允许用于前置取证和采样。
@@ -26,6 +28,25 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
 ```text
 真实浏览器采集终端 API 返回值 → Node.js 按调用特征匹配并回放 → fixtures 多样本验证
 ```
+
+## 指纹值来源优先级
+
+采集任何具体 WebAPI / 指纹值时，必须按以下顺序判断，不能跳级猜值：
+
+1. **Trace 未截断真实值**：用户已选择 RuyiTrace / 提供 NDJSON，且字段未达到截断阈值、日志覆盖当前业务路径、调用栈与目标参数生成链路相关、`baselineId` 与当前 case 一致。
+2. **同一取证工具补采完整值**：Trace 未选择、缺失、未覆盖、疑似截断或 baseline 不一致时，使用用户已确认的取证模式采样，例如 ruyiPage、Camoufox、CloakBrowser、用户手动浏览器或对应 MCP / Hook。采样必须复用同一 profile / seed / 代理 / locale / timezone / UA / Client Hints / screen / WebGL 基线。
+3. **用户提供的真实浏览器材料**：用户明确提供的 HAR、Hook 输出、浏览器控制台输出、完整响应或截图可作为证据，但必须记录来源、时间、页面、baseline 信息和完整性。
+4. **静态分析 / AI 推断仅辅助定位**：只能用于判断应该采样哪个 API、哪个调用参数、哪个 JS 位置，不能直接写入最终 fixture 的 `result`。
+
+如果 trace 中字符串达到或接近 4000 字符，必须标记为“疑似截断”：`truncated: true`、`realLength: "unknown"`、`visibleLength`、`sha256OfVisible`。该值不得作为最终回放值；必须用同一 case 已确认取证工具补采完整值。
+
+每个最终写入 fixture 的样本都要能回答：
+
+- 值来自哪里：RuyiTrace 未截断值 / ruyiPage 采样 / Camoufox 采样 / CloakBrowser 采样 / 用户手动浏览器材料 / 其他真实浏览器证据。
+- 是否完整：`truncated: false` 或记录完整长度与 hash；疑似截断值不得用于最终回放。
+- 属于哪个基线：`baselineId` 必须与 `case/notes/fingerprint-baseline.json` 一致。
+- 为什么不用 Trace：如果没有使用 trace，写明未选择、缺失、未覆盖、截断、baseline 冲突或用户明确降级。
+
 
 ## 过程 API 与终端 API
 
@@ -64,7 +85,10 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
   "baselineId": "fp-20260627-001",
   "source": {
     "baselineId": "fp-20260627-001",
-    "mode": "ruyiPage + RuyiTrace / CloakBrowser / 手动取证",
+    "mode": "ruyiPage + RuyiTrace / Camoufox / CloakBrowser / 手动取证",
+    "valuePriority": "trace-untruncated-first",
+    "traceStatus": "unused / used-untruncated / missing / not-covered / truncated / baseline-conflict",
+    "traceFallbackReason": "trace 字段疑似截断，已使用 ruyiPage 在同一 baseline 下补采完整值",
     "pageUrl": "https://example.com/page",
     "userAgent": "",
     "timezone": "Asia/Shanghai",
@@ -75,6 +99,7 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
     "toDataURL": [
       {
         "match": { "width": 300, "height": 150, "type": "image/png", "stackIncludes": "fingerprint.js" },
+        "source": { "capturedBy": "ruyiPage", "traceStatus": "truncated", "baselineId": "fp-20260627-001", "truncated": false, "valueLength": 123456, "sha256": "..." },
         "result": "data:image/png;base64,..."
       }
     ],
@@ -115,6 +140,8 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
 注意：
 
 - `baselineId` 是硬性字段；缺失或与 baseline 文件不一致时，不能把该 fixture 用于最终交付。
+- `source` / `capturedBy` / `traceStatus` / `truncated` 是硬性溯源字段；不能只写“AI 推断”“默认值”“静态分析得到”。
+- 如果样本继承全局 `source`，仍建议在长字符串、二进制、Canvas / WebGL / Audio 结果上写入每条记录自己的 `source`、`valueLength` 和 `sha256`。
 - `match` 是调用特征，不是安全边界；只用于选择回放样本。
 - `stackIncludes` 可记录目标 JS 文件名、函数名或调用栈片段。
 - 对 ArrayBuffer / Uint8ClampedArray / Float32Array 等二进制结果使用 base64 存储。
@@ -165,8 +192,8 @@ Node.js 交付环境中匹配指纹样本时，按以下顺序：
 ## 推荐执行流程
 
 1. 先读取 `fingerprint-baseline-consistency.md`，确认或创建 `case/notes/fingerprint-baseline.json` 与 `baselineId`。
-2. 用 RuyiTrace NDJSON 或 Hook 找到目标 JS 是否访问指纹 API。
-3. 如果访问的是 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，先生成采样 Hook：
+2. 用 RuyiTrace NDJSON 或 Hook 找到目标 JS 是否访问指纹 API；如果用户选择 / 提供 RuyiTrace，先判断 trace 中是否已有未截断真实值可用。
+3. 如果访问的是 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，且 trace 没有未截断完整值，再生成采样 Hook：
 
    ```bash
    node scripts/generate_fingerprint_hook.js --types canvas,webgl,dom-geometry --out case/hooks/fingerprint-hook.js
@@ -195,8 +222,9 @@ Node.js 交付环境中匹配指纹样本时，按以下顺序：
 
 - `baselineId`、baseline 文件路径和是否发生 baseline diff。
 - 哪些指纹 API 被目标 JS 访问。
-- 哪些值来自真实浏览器采样。
-- 哪些值来自 RuyiTrace / Hook / 用户手动材料。
+- 哪些值来自 RuyiTrace 未截断日志，哪些值因为 trace 缺失 / 未覆盖 / 截断 / baseline 冲突而改用自动化取证工具采样。
+- 哪些值来自 ruyiPage / Camoufox / CloakBrowser / Hook / 用户手动浏览器材料，并记录采样工具、时间、完整长度和 hash。
+- 是否存在疑似截断字段；如果存在，必须写明补采状态，不能把可见长度当成真实长度。
 - 哪些 API 做了近似降级及原因。
 - 缺失样本是否阻塞。
 - 最终项目是否完全不包含浏览器自动化代码。

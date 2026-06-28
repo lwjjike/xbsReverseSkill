@@ -170,7 +170,7 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 26. **RuyiTrace 优先诊断与长字段截断保护**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/missing-env-priority.md` 后再补环境。RuyiTrace 中达到或接近 4000 字符的字符串字段必须视为疑似截断：只能记录可见长度、最小长度和 hash，真实长度写 `unknown`，不得把 4000 或可见长度当成加密参数真实长度；需要完整值时必须通过 HAR/cURL、ruyiPage 网络抓包、专用 Hook 分片落盘或最终 signer 输出补采。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`。
 
-27. **指纹基线固定与指纹值回放优先**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等浏览器指纹时，先读取 `references/fingerprint-baseline-consistency.md`，确认 `case/notes/fingerprint-baseline.json` 和 `baselineId` 已创建且与当前取证 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 一致；不得混用不同随机指纹样本。不要在 Node.js 中强行复刻渲染管线，也不要因 node-canvas / headless-gl / jsdom 等结果不一致而建议最终改用浏览器自动化；应先用已确认取证模式采集真实浏览器终端 API 返回值、调用参数和调用栈，fixture 必须绑定同一 `baselineId`，再在 Node.js 交付环境中按调用特征回放。缺少指纹样本或 baseline 冲突时必须阻塞并提示补采样 / 重采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
+27. **指纹基线固定、Trace 优先与指纹值回放**：遇到 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何、`navigator`、`screen`、`window`、`document` 等需要具体真实值的 WebAPI / 指纹 API 时，先读取 `references/fingerprint-baseline-consistency.md` 与 `references/fingerprint-value-replay.md`，确认 `case/notes/fingerprint-baseline.json` 和 `baselineId` 已创建且与当前取证 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 一致；不得混用不同随机指纹样本。指纹值来源优先级是硬性规则：①如果用户选择 / 提供了 RuyiTrace 或其他 trace 日志，优先使用 trace 中未截断、已确认完整的真实浏览器值；②未选择 trace、trace 未覆盖目标路径、trace 字段达到或接近 4000 字符疑似截断、真实长度为 `unknown`、或日志与当前 `baselineId` 不一致时，必须使用用户当前确认的取证工具（ruyiPage、Camoufox、CloakBrowser、用户手动浏览器等）在同一 baseline 下重新采样完整值；③用户提供的真实浏览器材料可作为证据，但必须记录来源；④静态分析、AI 经验、默认值、随机值、mock 值、Node.js / jsdom / node-canvas / headless-gl 结果只能辅助定位，不能作为最终回放值。不要在 Node.js 中强行复刻渲染管线，也不要因模拟库结果不一致而建议最终改用浏览器自动化；应在 Node.js 交付环境中按调用特征回放已采样的真实终端 API 返回值。`fingerprint.fixture.json` 中每个样本必须绑定同一 `baselineId`，记录 `source / capturedBy / valueLength / hash / truncated` 等证据；缺少样本、来源不明、疑似截断或 baseline 冲突时必须阻塞并提示补采样 / 重采样，不得静默伪造默认值。自动化工具只允许用于前置采样，不能进入最终项目。
 
 28. **Node 泄露先阻断**：正式运行目标 JS 前先确认目标 JS 所在运行上下文不暴露 `process/Buffer/require/module/exports/global/__dirname/__filename/setImmediate/clearImmediate` 等 Node 能力，也不得直接复用宿主 Node Web API 兼容层。按 Node 官方文档，`navigator` 是 Node 21+ 全局对象，不是 Node 20 官方新增；检测到宿主 `navigator` 时必须先删除或隔离，再安装浏览器式 `Navigator`；`navigator.userAgent` 不得为 `Node.js/<major>`，不得暴露 Node 来源的 `navigator.locks`。检测到 Node 22.4+ 宿主 `localStorage/sessionStorage`、宿主 `performance.nodeTiming/eventLoopUtilization/timerify/markResourceTiming`、宿主 `fetch/WebSocket/BroadcastChannel/MessageChannel` 时，必须删除、隔离或用浏览器样本覆盖。`URL/TextEncoder/Streams/Events/crypto/WebAssembly/queueMicrotask` 等浏览器同名 API 如果参与检测，也必须按浏览器样本或可控实现安装，不能盲目透传 Node 宿主构造器。可使用用户已确认的补环境框架、独立 Node 进程或显式隔离全局对象，但不因 Node 泄露阻断自动切换到 `vm` / `isolated-vm`，并执行六项纯计算预检或说明跳过原因。
 
@@ -639,6 +639,8 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 指纹基线一致性：未创建 / 已创建 `case/notes/fingerprint-baseline.json` / 待采样；`baselineId`：；后续取证、RuyiTrace、Camoufox / CloakBrowser、Hook 与指纹 fixture 必须复用同一 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 基线，不得每次随机化
 
+- 指纹值来源优先级：如选择 / 提供 Trace，优先使用未截断 Trace 真实值；Trace 未选择、缺失、未覆盖或疑似截断时，使用当前已确认取证工具在同一 `baselineId` 下采样；禁止 AI 猜值、默认值、随机值或 Node.js 模拟库结果作为最终回放值
+
 - 取证事件可信性：自动点击 / 拖拽 / 键盘 / 滚动 / 验证码交互默认防 `isTrusted` 检测；ruyiPage 优先 native BiDi / human actions，必要 JS 事件使用 `ruyi: true`；Camoufox / CloakBrowser 使用 humanize / 原生输入，不把普通 `dispatchEvent` 作为主路径
 
 - RuyiTrace 状态：已安装并将优先自动捕获 / 未检测到 / 待安装 / 自动捕获失败需手动协助 / 用户明确降级为仅 ruyiPage
@@ -787,7 +789,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 通用代码变更记忆记录状态：本轮修改涉及文件、修改理由、已失败尝试、禁止回退、验证命令、验证范围和遗留风险。
 
-- Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹终端 API 的真实浏览器采样值、回放匹配规则、`baselineId` 绑定、baseline diff 和缺失样本处理记录。
+- Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何、`navigator`、`screen`、`window`、`document` 等 WebAPI / 指纹终端 API 的真实值来源优先级执行记录：是否优先查看 Trace、Trace 是否未截断可用、是否因缺失 / 未覆盖 / 疑似截断改用已确认取证工具采样、采样工具、`baselineId` 绑定、baseline diff、缺失样本处理记录，以及是否明确禁止 AI 猜值。
 
 - 环境与指纹 API 调用回放明细：按类别分组记录 `window / global`、`navigator`、`document / DOM`、`location / history`、`screen`、`storage / cookie`、`crypto / random`、`performance / timing`、`network`、`canvas`、`webgl`、`webgpu`、`audio`、`font / CSS / DOM geometry`、`events / trusted input`、`worker / wasm / postMessage`、`其他` 等分类；每条记录必须精确到 API 路径（如 `navigator.userAgent`、`Document.prototype.createElement`、`HTMLCanvasElement.prototype.getContext`）、访问类型、来源证据、参数摘要、返回值 / 回放值摘要、补环境实现、真实性保护和验证结果。未涉及的分类写“未涉及”，不得伪造调用；敏感值和超长值只写脱敏摘要、长度、hash 或截断说明。
 

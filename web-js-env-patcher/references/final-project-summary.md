@@ -50,6 +50,8 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - “环境与指纹 API 调用回放明细”必须按类别分组，例如 `window / global`、`navigator`、`document / DOM`、`canvas`、`webgl` 等；每条记录必须精确到访问的属性、调用的方法、构造函数或 getter / setter，不得只写“补了 navigator / canvas”。
 
+- “指纹值回放”必须记录值来源优先级执行情况：是否优先查看 Trace、Trace 是否未截断可用、Trace 缺失 / 未覆盖 / 疑似截断时使用了哪个已确认取证工具补采、是否绑定同一 `baselineId`、是否存在 AI 猜值 / 默认值 / 静态推断进入最终 fixture。
+
 - “高强度环境检测覆盖矩阵”用于记录异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链、MutationObserver、userAgentData、window.chrome、媒体能力、网络 Header / Client Hints 一致性、动态 JS 多版本回归等是否涉及、是否采样、是否已修复和遗留风险。
 
 
@@ -373,6 +375,10 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 数据来源：RuyiTrace NDJSON / Node trace / Proxy trace / Hook / fixture / 静态分析 / 手动确认
 
+- 值来源优先级：Trace 未截断值优先 / Trace 缺失或未覆盖已补采 / Trace 疑似截断已补采 / 未涉及具体值
+
+- 禁止猜值检查：是否存在 AI 猜值、默认值、随机值、Node.js 模拟库结果进入最终回放：否 / 是，处理方式：
+
 - 记录规则：按 API 类别分组；每条精确到属性访问、属性写入、getter、setter、方法调用、构造函数调用或静态方法调用
 
 - 敏感值处理：Cookie / Authorization / token / localStorage 等不写明文，只写脱敏摘要
@@ -533,9 +539,17 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 是否涉及指纹 API：
 
+- 值来源优先级执行情况：已优先检查 Trace / 未选择 Trace / Trace 缺失 / Trace 未覆盖 / Trace 疑似截断 / Trace baseline 冲突 / 不涉及
+
+- Trace 未截断可用值：API、字段路径、证据文件、长度、hash：
+
+- Trace 不可用或疑似截断时的补采工具：ruyiPage / Camoufox / CloakBrowser / 用户手动浏览器 / 其他；采样是否复用同一 `baselineId`：
+
 - 真实浏览器采样来源：
 
-- 覆盖范围：Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何 / 其他
+- 禁止猜值检查：AI 猜值 / 默认值 / 随机值 / Node.js 模拟库结果是否进入最终 fixture：否 / 是，处理方式：
+
+- 覆盖范围：Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何 / navigator / screen / window / document / 其他
 
 - fixture 文件：
 

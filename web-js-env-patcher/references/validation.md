@@ -2103,3 +2103,31 @@ node scripts/check_final_artifact.js --case-dir case --markdown
 - 最终总结“TLS 请求验证与 Session 请求链”章节记录 session client 类型、请求链、Cookie jar 来源和销毁方式。
 - 最终项目仍不得包含浏览器自动化代码。
 
+## 测试 120：指纹值必须 Trace 未截断优先，Trace 不可用再采样
+
+输入场景：目标访问 `canvas.toDataURL()`、`WebGLRenderingContext.getParameter()`、`navigator.userAgent` 或 `screen.width` 等具体值；用户选择了 RuyiTrace，并且 NDJSON 覆盖当前业务路径。
+
+期望：
+
+- 先读取并导入 RuyiTrace NDJSON，检查 `notes/ruyitrace-summary.md` 和原始日志中对应 API 的值、调用栈、baseline 和截断状态。
+- 如果字段未截断且与当前 `baselineId` 一致，优先把该真实值作为 fixture 来源，并记录 `source.traceStatus = "used-untruncated"`。
+- 如果字段达到或接近 4000 字符、真实长度为 `unknown`、trace 未覆盖或 baseline 冲突，不能把 trace 可见片段作为最终 `result`；必须使用用户已确认的 ruyiPage / Camoufox / CloakBrowser / 手动浏览器在同一 baseline 下补采。
+- 每个最终样本必须记录 `baselineId`、`source / capturedBy`、`traceStatus`、`truncated`、长度和 hash。
+
+## 测试 121：禁止 AI 猜指纹值或用 Node.js 模拟库结果替代真实值
+
+输入场景：`fingerprint.fixture.json` 中的 `canvas.toDataURL`、`webgl.getParameter` 或 `navigator.languages` 没有 trace 证据，也没有自动化 / 手动浏览器采样来源，只写了默认值、随机值、AI 推断值，或最终 env 使用 `node-canvas` / `headless-gl` / `jsdom` 的输出作为指纹结果。
+
+执行：
+
+```bash
+node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl --markdown
+node scripts/check_final_artifact.js --case-dir case --markdown
+```
+
+期望：
+
+- 检查失败或阶段门禁阻塞。
+- 明确指出缺少真实值来源，要求优先查看未截断 Trace；Trace 不可用时用当前已确认取证工具补采。
+- 不得把 AI 猜值、静态分析、默认值、随机值、mock 值、Node.js / jsdom / node-canvas / headless-gl 结果作为最终回放值。
+- 最终项目不得包含指纹采样 Hook 或浏览器自动化代码；只能回放已经采样并绑定同一 `baselineId` 的真实值。

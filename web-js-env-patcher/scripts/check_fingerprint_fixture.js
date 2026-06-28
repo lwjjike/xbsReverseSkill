@@ -55,6 +55,119 @@ function pickBaselineId(obj) {
   return String(obj.baselineId || (obj.source && obj.source.baselineId) || '');
 }
 
+
+const BAD_VALUE_SOURCE_RE = /(AI\s*(?:推断|猜|生成|guess)|猜测|编造|伪造|默认值|随机值|mock|fake|placeholder|static\s*analysis|静态分析|inferred|guessed|random\s*value|jsdom|node-canvas|headless-gl)/i;
+const REAL_VALUE_SOURCE_RE = /(RuyiTrace|NDJSON|ruyiPage|Camoufox|CloakBrowser|手动|真实浏览器|browser|Hook|HAR|MCP|用户提供|console|network)/i;
+const TRACE_TOOL_RE = /(RuyiTrace|NDJSON)/i;
+const AUTOMATION_OR_USER_TOOL_RE = /(ruyiPage|Camoufox|CloakBrowser|手动|真实浏览器|browser|Hook|HAR|MCP|用户提供|console|network)/i;
+
+function jsonText(v) {
+  try { return JSON.stringify(v || {}); } catch { return String(v || ''); }
+}
+
+function sourceLabel(source) {
+  if (!source || typeof source !== 'object') return '';
+  return [source.capturedBy, source.tool, source.mode, source.sourceType, source.type, source.origin, source.evidence]
+    .filter(Boolean).map(String).join(' ');
+}
+
+function traceStatusOf(source, record) {
+  return String((record && record.traceStatus) || (source && source.traceStatus) || '');
+}
+
+function hasSourceMeta(source) {
+  if (!source || typeof source !== 'object') return false;
+  return !!(source.capturedBy || source.tool || source.mode || source.sourceType || source.type || source.origin || source.evidence);
+}
+
+function isTruncatedTraceStatus(status) {
+  const s = String(status || '');
+  if (/used-untruncated|untruncated|not-truncated/i.test(s)) return false;
+  return /(^|[-_\s])truncated($|[-_\s])|疑似截断|截断/i.test(s);
+}
+
+function isTraceValueSource(source, record) {
+  const status = traceStatusOf(source, record);
+  const label = sourceLabel(source);
+  if (/used-untruncated/i.test(status)) return true;
+  if (/truncated|missing|not-covered|baseline-conflict|unused/i.test(status) && AUTOMATION_OR_USER_TOOL_RE.test(label) && !TRACE_TOOL_RE.test(String(source && source.capturedBy || ''))) return false;
+  return TRACE_TOOL_RE.test(label);
+}
+
+function collectStringLengths(value, out = []) {
+  if (typeof value === 'string') out.push(value.length);
+  else if (Array.isArray(value)) for (const item of value) collectStringLengths(item, out);
+  else if (value && typeof value === 'object') for (const item of Object.values(value)) collectStringLengths(item, out);
+  return out;
+}
+
+function collectResultRecords(node, out = [], pathParts = []) {
+  if (!node || typeof node !== 'object') return out;
+  if (Object.prototype.hasOwnProperty.call(node, 'result')) {
+    out.push({ path: pathParts.join('.') || '$', record: node, value: node.result });
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key === 'source' || key === 'valueSource' || key === 'match') continue;
+    if (value && typeof value === 'object') collectResultRecords(value, out, pathParts.concat(key));
+  }
+  return out;
+}
+
+function validateValueSources(fp) {
+  const problems = [];
+  const warnings = [];
+  const sourceSummary = { totalRecords: 0, inheritedSource: 0, explicitSource: 0, traceSource: 0, sampledSource: 0, longValueRecords: 0, badSourceRecords: 0 };
+  const rootSource = fp && fp.source;
+
+  function validateSource(source, label, record, inherited) {
+    if (!source || typeof source !== 'object') {
+      problems.push(`${label} 缺少真实值来源 source / capturedBy；必须优先使用未截断 Trace，Trace 不可用时用已确认取证工具采样，不能由 AI 猜值。`);
+      return;
+    }
+    const sourceText = jsonText(source);
+    const labelText = sourceLabel(source);
+    const isFixtureRoot = label === 'fixture.source';
+    if (!hasSourceMeta(source)) problems.push(`${label} 的 source 缺少 mode / capturedBy / tool / sourceType 等来源字段。`);
+    if (!REAL_VALUE_SOURCE_RE.test(sourceText)) problems.push(`${label} 的 source 未体现真实浏览器证据来源；请记录 RuyiTrace 未截断值，或 ruyiPage / Camoufox / CloakBrowser / 手动浏览器采样来源。`);
+    if (BAD_VALUE_SOURCE_RE.test(sourceText)) {
+      if (!isFixtureRoot) sourceSummary.badSourceRecords += 1;
+      problems.push(`${label} 的 source 疑似为 AI 猜值、静态分析、默认值、随机值、mock 值或 Node.js 模拟库结果，不能作为最终指纹回放值。`);
+    }
+    const status = traceStatusOf(source, record);
+    if (!status) warnings.push(`${label} 缺少 traceStatus；建议记录 used-untruncated / unused / missing / not-covered / truncated / baseline-conflict，明确是否优先检查 Trace。`);
+    if (!isFixtureRoot && isTraceValueSource(source, record)) sourceSummary.traceSource += 1;
+    if (!isFixtureRoot && AUTOMATION_OR_USER_TOOL_RE.test(labelText)) sourceSummary.sampledSource += 1;
+  }
+
+  validateSource(rootSource, 'fixture.source', null, false);
+  const records = collectResultRecords(fp);
+  sourceSummary.totalRecords = records.length;
+  for (const item of records) {
+    const source = item.record.source || item.record.valueSource || rootSource;
+    const inherited = !(item.record.source || item.record.valueSource);
+    if (inherited) sourceSummary.inheritedSource += 1;
+    else sourceSummary.explicitSource += 1;
+    validateSource(source, `样本 ${item.path}`, item.record, inherited);
+
+    const lengths = collectStringLengths(item.value);
+    const maxLen = lengths.length ? Math.max(...lengths) : 0;
+    if (maxLen >= 3900) sourceSummary.longValueRecords += 1;
+    const valueIsMarkedTruncated = item.record.truncated === true || (source && source.truncated === true);
+    const status = traceStatusOf(source, item.record);
+    if (valueIsMarkedTruncated) problems.push(`样本 ${item.path} 标记为 truncated=true，不能作为最终回放值；请用同一 baseline 下的取证工具补采完整值。`);
+    if (isTraceValueSource(source, item.record) && (maxLen >= 3900 || isTruncatedTraceStatus(status) || valueIsMarkedTruncated)) {
+      problems.push(`样本 ${item.path} 来自 Trace 且疑似长字段截断；不能把 RuyiTrace 可见片段作为完整指纹值，请用 ruyiPage / Camoufox / CloakBrowser / 手动浏览器补采完整值。`);
+    }
+    if (maxLen >= 3900 && inherited) {
+      problems.push(`样本 ${item.path} 是长字符串 / 大结果但未记录每条样本自己的 source、valueLength 和 hash；请补充完整采样来源，避免误把 Trace 4000 字符可见片段当成真实值。`);
+    }
+    if (maxLen >= 3900 && !('valueLength' in item.record) && !(source && 'valueLength' in source) && !('sha256' in item.record) && !(source && 'sha256' in source)) {
+      warnings.push(`样本 ${item.path} 长度达到 ${maxLen}，建议记录完整 valueLength 与 sha256，便于确认不是截断片段。`);
+    }
+  }
+  return { problems, warnings, sourceSummary };
+}
+
 function inspectFixture(file) {
   const problems = [];
   const warnings = [];
@@ -101,8 +214,11 @@ function inspectFixture(file) {
 
   const baselineId = pickBaselineId(fp);
   if (!baselineId) problems.push('指纹 fixture 缺少 baselineId；必须先创建 case/notes/fingerprint-baseline.json，并让 fixture 绑定同一 baselineId。');
-  if (!fp.source) warnings.push('指纹 fixture 缺少 source 字段，建议记录取证模式、pageUrl、userAgent、timezone、locale、baselineId 和采样时间。');
-  return { fixture: fp, baselineId, counts, problems, warnings };
+  if (!fp.source) problems.push('指纹 fixture 缺少 source 字段；必须记录真实值来源，优先使用未截断 Trace，Trace 不可用时使用已确认取证工具采样。');
+  const sourceResult = validateValueSources(fp);
+  problems.push(...sourceResult.problems);
+  warnings.push(...sourceResult.warnings);
+  return { fixture: fp, baselineId, counts, problems, warnings, sourceSummary: sourceResult.sourceSummary };
 }
 
 function inspectBaseline(caseDir, fixtureResult) {
@@ -226,6 +342,7 @@ function check(args) {
     baseline: baselineResult.result,
     fixtureBaselineId: fixtureResult.baselineId || '',
     counts: fixtureResult.counts,
+    sourceSummary: fixtureResult.sourceSummary || { totalRecords: 0, inheritedSource: 0, explicitSource: 0, traceSource: 0, sampledSource: 0, longValueRecords: 0, badSourceRecords: 0 },
     badImplementationHits: envResult.hits,
     problems,
     warnings,
@@ -250,6 +367,14 @@ function renderMarkdown(result) {
     '## 样本覆盖统计',
   ];
   for (const [k, v] of Object.entries(result.counts)) lines.push(`- ${k}：${v}`);
+  lines.push('', '## 指纹值来源检查');
+  lines.push(`- result 样本数量：${result.sourceSummary.totalRecords}`);
+  lines.push(`- 显式 source 样本：${result.sourceSummary.explicitSource}`);
+  lines.push(`- 继承全局 source 样本：${result.sourceSummary.inheritedSource}`);
+  lines.push(`- Trace 来源样本：${result.sourceSummary.traceSource}`);
+  lines.push(`- 自动化 / 手动浏览器采样来源样本：${result.sourceSummary.sampledSource}`);
+  lines.push(`- 长字段样本：${result.sourceSummary.longValueRecords}`);
+  lines.push(`- 疑似猜值 / 默认值 / 模拟库来源样本：${result.sourceSummary.badSourceRecords}`);
   lines.push('', '## 检查的 env 文件');
   if (result.envFiles.length) for (const f of result.envFiles) lines.push(`- ${f}`);
   else lines.push('- 未发现 result 下的 JS env 文件');

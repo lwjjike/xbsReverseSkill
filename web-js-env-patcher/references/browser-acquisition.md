@@ -59,6 +59,17 @@
 - 发现 language、timezone、platform、UA、Client Hints、screen、DPR、WebGL、Canvas、Audio、字体或代理地区不一致时，暂停并写入 `case/notes/fingerprint-baseline-diff.md`；未经用户确认，不得混用样本。
 - 用户明确更换代理、地区、profile 或工具时，生成新的 `baselineId`，旧样本只能保留为历史证据。
 
+### WebAPI / 指纹值采样来源硬约束
+
+当补环境需要具体值，例如 `navigator.userAgent`、`navigator.languages`、`screen.width`、`canvas.toDataURL()`、`WebGLRenderingContext.getParameter()`、`document.createElement()` 后的 DOM 几何、字体宽高、Audio / WebGPU 返回值等，必须遵循：
+
+1. 用户选择 / 提供 RuyiTrace 或其他 trace 日志时，先查看 trace 中同一 `baselineId`、同一业务路径、未截断的真实值。
+2. trace 未选择、缺失、未覆盖、疑似截断、真实长度为 `unknown` 或 baseline 不一致时，再用当前用户确认的取证工具采样；不得临时改用普通 Playwright、Puppeteer、系统浏览器或另一个随机指纹工具。
+3. 自动化采样必须复用当前 case 的固定 profile / seed / 代理 / locale / timezone / UA / Client Hints / screen / WebGL 基线，并把采样结果写入 `case/fixtures/fingerprint.fixture.json` 或对应 fixture。
+4. AI 不能根据经验猜值；静态分析只能帮助确定要采样的 API、调用参数和代码位置。
+5. 每条采样值都要记录 `baselineId`、`source / capturedBy`、`traceStatus`、是否截断、长度 / hash 和采样时间。
+
+
 ## isTrusted 与原生输入硬约束
 
 当取证阶段需要点击、鼠标移动、拖拽、键盘输入、滚动或验证码交互时，必须先按已确认工具选择可信输入路径：
