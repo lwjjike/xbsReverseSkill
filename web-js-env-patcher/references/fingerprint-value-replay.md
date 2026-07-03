@@ -10,12 +10,13 @@
 
 - **指纹基线先固定**：采样前先读取 `fingerprint-baseline-consistency.md`，确认 `case/notes/fingerprint-baseline.json` 和 `baselineId` 已创建；所有采样必须来自同一 profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 基线。
 - **Trace 未截断值优先**：如果用户选择 / 提供了 RuyiTrace 或其他 trace 日志，先使用 trace 中未截断、与当前 `baselineId` 一致、能确认完整性的真实浏览器值。
-- **Trace 不可用再采样**：未选择 trace、trace 缺失、trace 未覆盖目标路径、trace 字符串达到或接近 4000 字符疑似截断、真实长度为 `unknown`、或 trace baseline 冲突时，必须使用用户当前确认的取证工具采集真实浏览器最终返回值、调用参数、调用栈和调用顺序。
+- **Trace 不可用再采样**：未选择 trace、trace 缺失、trace 未覆盖目标路径、trace 字符串 / 序列化值达到或接近 4000 / 4096 字符疑似截断、真实长度为 `unknown`、或 trace baseline 冲突时，必须使用用户当前确认的取证工具采集真实浏览器最终返回值、调用参数、调用栈和调用顺序。
 - **禁止 AI 猜指纹值**：AI 经验、静态分析、默认值、随机值、mock 值、Node.js / jsdom / node-canvas / headless-gl 的结果不能作为最终指纹回放值，只能辅助定位和设计采样点。
 - **终端 API 值回放优先**：在 Node.js 中拦截目标真正读取指纹结果的 API，并返回采样值。
 - **不真实模拟渲染过程**：不要为了 Canvas / WebGL / 字体 / DOM 几何去强行复现 Skia、GPU、字体栅格化、抗锯齿、颜色管理或浏览器布局。
 - **不退回自动化作为最终方案**：Node.js 无法真实渲染时，不得建议把最终生成参数或最终验证改成浏览器自动化；自动化只允许用于前置取证和采样。
 - **缺样本即显式阻塞**：没有采到的指纹值不要乱猜，不要静默返回空值；应提示补采样本或降级说明。
+- **长指纹值不得用截断片段**：Canvas dataURL、WebGL readPixels、WebGPU adapter / limits / features、Audio channel data、字体 / DOM 几何批量结果等可能远超 4000 / 4096；只要来自会截断的日志字段，就必须视为定位证据而不是最终值，最终 fixture 必须来自同一 baseline 下的真实浏览器完整采样。
 
 错误方向：
 
@@ -38,12 +39,23 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
 3. **用户提供的真实浏览器材料**：用户明确提供的 HAR、Hook 输出、浏览器控制台输出、完整响应或截图可作为证据，但必须记录来源、时间、页面、baseline 信息和完整性。
 4. **静态分析 / AI 推断仅辅助定位**：只能用于判断应该采样哪个 API、哪个调用参数、哪个 JS 位置，不能直接写入最终 fixture 的 `result`。
 
-如果 trace 中字符串达到或接近 4000 字符，必须标记为“疑似截断”：`truncated: true`、`realLength: "unknown"`、`visibleLength`、`sha256OfVisible`。该值不得作为最终回放值；必须用同一 case 已确认取证工具补采完整值。
+如果 trace 中字符串达到或接近 4000 / 4096 字符，必须标记为“疑似截断”：`truncated: true`、`realLength: "unknown"`、`visibleLength`、`sha256OfVisible`。该值不得作为最终回放值；必须用同一 case 已确认取证工具补采完整值。
+
+### 长指纹值截断硬门禁
+
+以下规则是硬性要求：
+
+1. RuyiTrace / NDJSON / 普通日志中的长字段达到或接近 4000 / 4096 时，只能说明“至少有这些可见字符”，不能说明真实长度就是 4000 / 4096。
+2. 不能把 `visiblePreview`、`visibleSha256`、`sha256OfVisible`、日志可见片段、`...<clipped>`、`...<truncated>`、`__ruyiTraceLongString__` 对象或被日志 sanitization 包装后的字段写成最终 `result`。
+3. Canvas `toDataURL`、Canvas `getImageData`、WebGL `readPixels`、WebGPU `adapter.info / limits / features`、Audio `getChannelData / startRendering`、字体和 DOM 几何批量结果，如果 trace 中达到 4000 / 4096，必须由已确认取证工具重新采样完整浏览器真实值。
+4. 完整采样值可以直接存储，也可以使用分片格式存储；分片格式必须记录 `encoding: "string-chunks"`、`valueLength`、`chunkSize`、`chunks`、`truncated: false` 和完整值 hash。
+5. 没有完整真实值时，阻塞最终交付；不要把 4096 字符当成“刚好完整”，也不要用 Node.js 渲染库补一个近似值。
+6. 数值型返回值为 4096 不一定是截断，例如 WebGL `MAX_TEXTURE_SIZE`；本规则针对日志中的长字符串、长数组、base64、序列化对象和二进制编码结果。
 
 每个最终写入 fixture 的样本都要能回答：
 
 - 值来自哪里：RuyiTrace 未截断值 / ruyiPage 采样 / Camoufox 采样 / CloakBrowser 采样 / 用户手动浏览器材料 / 其他真实浏览器证据。
-- 是否完整：`truncated: false` 或记录完整长度与 hash；疑似截断值不得用于最终回放。
+- 是否完整：`truncated: false`，并记录完整 `valueLength` 与 `sha256`；疑似截断值不得用于最终回放。
 - 属于哪个基线：`baselineId` 必须与 `case/notes/fingerprint-baseline.json` 一致。
 - 为什么不用 Trace：如果没有使用 trace，写明未选择、缺失、未覆盖、截断、baseline 冲突或用户明确降级。
 
@@ -74,6 +86,22 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
 | 字体 | `measureText`、`document.fonts.check`、DOM 字体探测元素的宽高 |
 | DOM 几何 | `getBoundingClientRect`、`getClientRects`、`offsetWidth`、`offsetHeight`、`scrollWidth`、`scrollHeight`、`clientWidth`、`clientHeight` |
 | CSS / 媒体 | `getComputedStyle`、`matchMedia`、`CSS.supports` |
+| Speech | `speechSynthesis.getVoices`、`SpeechSynthesisUtterance` 属性、voices 列表顺序与语言 |
+| Permissions | `navigator.permissions.query` 的 Promise、`PermissionStatus.state`、事件属性、错误模式 |
+| Plugins / MimeTypes | `navigator.plugins`、`navigator.mimeTypes`、`PluginArray` / `MimeTypeArray` 长度、索引、命名属性和描述符 |
+| MediaDevices / WebRTC | `navigator.mediaDevices.enumerateDevices`、`getUserMedia` 错误模式、`RTCPeerConnection` 候选信息摘要 |
+
+## 高强度指纹补充与随机化风险
+
+高强度检测中，Canvas / WebGL / Audio / Fonts / DOM geometry / Permissions / Plugins 等结果被随机化或伪装不一致，可能比固定真实值更容易暴露。补环境时必须遵循：
+
+- 不要使用 `Math.random()`、时间戳、机器默认值或 AI 经验生成指纹返回值。
+- 不要把 `node-canvas`、`headless-gl`、`jsdom`、系统字体枚举结果直接当成最终浏览器样本。
+- 不要每次取证重新生成一套 UA、语言、时区、screen、WebGL、Canvas、Audio 或字体结果；同一 case 只能使用同一 `baselineId`。
+- 对 `navigator.plugins` / `navigator.mimeTypes`，addon 可用时优先 `getMimeTypesAndPlugins(config)`；不要用普通数组或空数组临时糊弄。
+- 对 Permissions / Speech / MediaDevices 等异步 API，要采样 Promise 行为、错误类型、事件属性、返回对象原型链和 `toStringTag`，不能只补一个同步值。
+- 如果 trace 中长字段接近 4000 / 4096 字符，按截断处理并补采完整值，不能把可见片段作为最终 fixture；完整值必须来自同一 baseline 下的真实浏览器采样。
+
 
 ## 采样格式
 
@@ -100,7 +128,7 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
       {
         "match": { "width": 300, "height": 150, "type": "image/png", "stackIncludes": "fingerprint.js" },
         "source": { "capturedBy": "ruyiPage", "traceStatus": "truncated", "baselineId": "fp-20260627-001", "truncated": false, "valueLength": 123456, "sha256": "..." },
-        "result": "data:image/png;base64,..."
+        "result": { "encoding": "string-chunks", "valueLength": 123456, "chunkSize": 3000, "chunks": ["data:image/png;base64,..."], "truncated": false, "sha256": "..." }
       }
     ],
     "measureText": [
@@ -141,7 +169,7 @@ node-canvas / headless-gl / 自己实现 DOM 布局 → 结果与真实浏览器
 
 - `baselineId` 是硬性字段；缺失或与 baseline 文件不一致时，不能把该 fixture 用于最终交付。
 - `source` / `capturedBy` / `traceStatus` / `truncated` 是硬性溯源字段；不能只写“AI 推断”“默认值”“静态分析得到”。
-- 如果样本继承全局 `source`，仍建议在长字符串、二进制、Canvas / WebGL / Audio 结果上写入每条记录自己的 `source`、`valueLength` 和 `sha256`。
+- 如果样本继承全局 `source`，短值可以接受；但长字符串、二进制、Canvas / WebGL / WebGPU / Audio 结果必须写入每条记录自己的 `source`、`valueLength`、`sha256` 和 `truncated: false`，必要时使用 `encoding: "string-chunks"` 分片保存。
 - `match` 是调用特征，不是安全边界；只用于选择回放样本。
 - `stackIncludes` 可记录目标 JS 文件名、函数名或调用栈片段。
 - 对 ArrayBuffer / Uint8ClampedArray / Float32Array 等二进制结果使用 base64 存储。
@@ -193,14 +221,14 @@ Node.js 交付环境中匹配指纹样本时，按以下顺序：
 
 1. 先读取 `fingerprint-baseline-consistency.md`，确认或创建 `case/notes/fingerprint-baseline.json` 与 `baselineId`。
 2. 用 RuyiTrace NDJSON 或 Hook 找到目标 JS 是否访问指纹 API；如果用户选择 / 提供 RuyiTrace，先判断 trace 中是否已有未截断真实值可用。
-3. 如果访问的是 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，且 trace 没有未截断完整值，再生成采样 Hook：
+3. 如果访问的是 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何，且 trace 没有未截断完整值，或 trace 字段达到 / 接近 4000 / 4096，再生成采样 Hook；采样 Hook 必须完整保存长值或分片保存，不得裁剪为 4096：
 
    ```bash
    node scripts/generate_fingerprint_hook.js --types canvas,webgl,dom-geometry --out case/hooks/fingerprint-hook.js
    ```
 
-4. 在用户确认的取证工具中运行采样 Hook，触发最少量业务动作。
-5. 把采样结果保存为 `case/fixtures/fingerprint.fixture.json`。
+4. 在用户确认的取证工具中运行采样 Hook，触发最少量业务动作；复制结果前必须执行 `await window.__WEB_JS_ENV_PATCHER_FINALIZE_FINGERPRINT__()`，确保所有分片长值写入完整 `valueLength`、`sha256`、`chunks` 与 `truncated:false`。
+5. 把 finalize 后的采样结果保存为 `case/fixtures/fingerprint.fixture.json`；禁止保存 `clip` 片段、`visiblePreview`、`sha256OfVisible`、`__ruyiTraceLongString__` 或任何真实长度 unknown 的 trace 可见片段。
 6. 运行覆盖检查：
 
    ```bash
@@ -224,7 +252,7 @@ Node.js 交付环境中匹配指纹样本时，按以下顺序：
 - 哪些指纹 API 被目标 JS 访问。
 - 哪些值来自 RuyiTrace 未截断日志，哪些值因为 trace 缺失 / 未覆盖 / 截断 / baseline 冲突而改用自动化取证工具采样。
 - 哪些值来自 ruyiPage / Camoufox / CloakBrowser / Hook / 用户手动浏览器材料，并记录采样工具、时间、完整长度和 hash。
-- 是否存在疑似截断字段；如果存在，必须写明补采状态，不能把可见长度当成真实长度。
+- 是否存在疑似截断字段；如果存在，必须写明补采状态，不能把可见长度当成真实长度，也不能把 trace 中 4000 / 4096 字符片段当成最终指纹值。
 - 哪些 API 做了近似降级及原因。
 - 缺失样本是否阻塞。
 - 最终项目是否完全不包含浏览器自动化代码。

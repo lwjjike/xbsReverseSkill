@@ -71,6 +71,19 @@ def close_request_session(session):
 
 如 cffi_curl / cyCronet 当前版本没有现成 Session，需要在 `src/request_client.py` 自行维护 Cookie jar 和底层连接生命周期，并提供 `close_request_session(...)`。
 
+## 高强度入口页与请求顺序
+
+如果目标存在 403 / 429 / challenge / bot block / verify / captcha / 风控页、动态 JS、首访 Cookie、检测脚本或 API 依赖入口页状态，最终请求链不能只包含目标 API。必须在同一 session 中记录和必要时复现：
+
+1. 入口 HTML 请求及其响应状态、Set-Cookie、Cache-Control、body hash、动态 seed / nonce。
+2. 关键 JS / challenge / telemetry / fingerprint 资源请求，及其是否需要运行时刷新。
+3. Cookie / localStorage / sessionStorage / IndexedDB / device token 的生成或刷新点。
+4. 业务前置接口与目标 API 的 Referer / Origin / Sec-Fetch 关系。
+5. 请求顺序和必要的时间间隔；不要把浏览器中的多步链路压成无状态单请求。
+6. 失败时记录是否返回风控页、Cookie 过期、请求链缺失、TLS / Header 不一致，还是目标 JS 参数错误。
+
+最终项目仍不得包含浏览器自动化代码；入口页和动态资源刷新必须由已确认的 Node.js / Python TLS 指纹兼容 Session 客户端完成，或用户明确选择只输出本地参数。
+
 ## final 入口顺序
 
 `final.js` / `final.py` 必须采用以下顺序：

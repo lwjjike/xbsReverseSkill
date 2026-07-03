@@ -60,6 +60,10 @@ const BAD_VALUE_SOURCE_RE = /(AI\s*(?:推断|猜|生成|guess)|猜测|编造|伪
 const REAL_VALUE_SOURCE_RE = /(RuyiTrace|NDJSON|ruyiPage|Camoufox|CloakBrowser|手动|真实浏览器|browser|Hook|HAR|MCP|用户提供|console|network)/i;
 const TRACE_TOOL_RE = /(RuyiTrace|NDJSON)/i;
 const AUTOMATION_OR_USER_TOOL_RE = /(ruyiPage|Camoufox|CloakBrowser|手动|真实浏览器|browser|Hook|HAR|MCP|用户提供|console|network)/i;
+const LONG_VALUE_THRESHOLD = 3900;
+const BAD_TRUNCATED_KEY_RE = /^(visiblePreview|visibleSha256|sha256OfVisible|visibleValue|visibleSnippet|preview|clippedPreview)$/i;
+const BAD_TRUNCATED_TEXT_RE = /(\.\.\.<(?:clipped|truncated)>|<clipped>|<truncated>|__ruyiTraceLongString__|sha256OfVisible|visibleSha256|visiblePreview|realLength["']?\s*[:=]\s*["']?unknown)/i;
+const CHUNK_ENCODING_RE = /^(string-chunks|base64-chunks)$/;
 
 function jsonText(v) {
   try { return JSON.stringify(v || {}); } catch { return String(v || ''); }
@@ -101,6 +105,84 @@ function collectStringLengths(value, out = []) {
   return out;
 }
 
+function isChunkedValue(value) {
+  return !!(
+    value &&
+    typeof value === 'object' &&
+    CHUNK_ENCODING_RE.test(String(value.encoding || '')) &&
+    Array.isArray(value.chunks)
+  );
+}
+
+function hasOwn(obj, key) {
+  return !!(obj && typeof obj === 'object' && Object.prototype.hasOwnProperty.call(obj, key));
+}
+
+function hasLengthAndHashOn(value, record, source) {
+  if (isChunkedValue(value)) {
+    return Number.isFinite(value.valueLength) && typeof value.sha256 === 'string' && /^[a-f0-9]{64}$/i.test(value.sha256);
+  }
+  if (value && typeof value === 'object') {
+    const metrics = collectValueMetrics(value);
+    if (metrics.chunked.length) {
+      return metrics.chunked.every(info =>
+        Number.isFinite(info.value.valueLength) &&
+        typeof info.value.sha256 === 'string' &&
+        /^[a-f0-9]{64}$/i.test(info.value.sha256)
+      );
+    }
+  }
+  return (
+    (hasOwn(record, 'valueLength') || hasOwn(source, 'valueLength')) &&
+    (hasOwn(record, 'sha256') || hasOwn(source, 'sha256'))
+  );
+}
+
+function collectValueMetrics(value, out = { maxLen: 0, chunked: [], badMarkers: [] }, pathParts = []) {
+  const label = pathParts.join('.') || 'result';
+  if (typeof value === 'string') {
+    out.maxLen = Math.max(out.maxLen, value.length);
+    if (BAD_TRUNCATED_TEXT_RE.test(value)) out.badMarkers.push(`${label} 包含截断标记或可见片段标记`);
+  } else if (Array.isArray(value)) {
+    value.forEach((item, idx) => collectValueMetrics(item, out, pathParts.concat(String(idx))));
+  } else if (value && typeof value === 'object') {
+    if (isChunkedValue(value)) {
+      const joined = value.chunks.join('');
+      out.maxLen = Math.max(out.maxLen, Number(value.valueLength) || joined.length);
+      out.chunked.push({ path: label, value, joinedLength: joined.length });
+    }
+    for (const [key, item] of Object.entries(value)) {
+      if (BAD_TRUNCATED_KEY_RE.test(key)) out.badMarkers.push(`${label}.${key} 使用了 Trace 可见片段字段，不能作为最终值`);
+      collectValueMetrics(item, out, pathParts.concat(key));
+    }
+  }
+  return out;
+}
+
+function validateChunkedValue(itemPath, chunk) {
+  const problems = [];
+  const warnings = [];
+  const encoding = String(chunk.encoding || '');
+  const joined = Array.isArray(chunk.chunks) ? chunk.chunks.join('') : '';
+  if (!CHUNK_ENCODING_RE.test(encoding)) problems.push(`样本 ${itemPath} 的分片 encoding 不合法：${encoding || '未指定'}。`);
+  if (!Array.isArray(chunk.chunks) || chunk.chunks.some(v => typeof v !== 'string')) problems.push(`样本 ${itemPath} 的 chunks 必须是字符串数组。`);
+  if (!Number.isFinite(chunk.valueLength)) problems.push(`样本 ${itemPath} 的分片结果缺少数值型 valueLength。`);
+  if (!Number.isFinite(chunk.chunkSize) || chunk.chunkSize <= 0) problems.push(`样本 ${itemPath} 的分片结果缺少有效 chunkSize。`);
+  if (chunk.truncated !== false) problems.push(`样本 ${itemPath} 的分片结果必须显式 truncated:false。`);
+  if (Number.isFinite(chunk.valueLength) && joined.length !== chunk.valueLength) {
+    problems.push(`样本 ${itemPath} 的 chunks 拼接长度 ${joined.length} 与 valueLength ${chunk.valueLength} 不一致。`);
+  }
+  if (Number.isFinite(chunk.chunkSize)) {
+    const tooLarge = (chunk.chunks || []).find(v => v.length > chunk.chunkSize);
+    if (tooLarge) warnings.push(`样本 ${itemPath} 存在超过 chunkSize 的分片；请确认分片写入逻辑没有异常。`);
+  }
+  if (typeof chunk.sha256 !== 'string' || !/^[a-f0-9]{64}$/i.test(chunk.sha256)) {
+    problems.push(`样本 ${itemPath} 的长指纹分片缺少完整 sha256；必须先在真实浏览器采样 Hook 中 finalize，再写入 fixture。`);
+  }
+  if (BAD_TRUNCATED_TEXT_RE.test(joined)) problems.push(`样本 ${itemPath} 的分片拼接结果包含截断标记，不能作为最终值。`);
+  return { problems, warnings };
+}
+
 function collectResultRecords(node, out = [], pathParts = []) {
   if (!node || typeof node !== 'object') return out;
   if (Object.prototype.hasOwnProperty.call(node, 'result')) {
@@ -116,7 +198,17 @@ function collectResultRecords(node, out = [], pathParts = []) {
 function validateValueSources(fp) {
   const problems = [];
   const warnings = [];
-  const sourceSummary = { totalRecords: 0, inheritedSource: 0, explicitSource: 0, traceSource: 0, sampledSource: 0, longValueRecords: 0, badSourceRecords: 0 };
+  const sourceSummary = {
+    totalRecords: 0,
+    inheritedSource: 0,
+    explicitSource: 0,
+    traceSource: 0,
+    sampledSource: 0,
+    longValueRecords: 0,
+    chunkedLongValueRecords: 0,
+    blockedTruncatedResultRecords: 0,
+    badSourceRecords: 0
+  };
   const rootSource = fp && fp.source;
 
   function validateSource(source, label, record, inherited) {
@@ -149,20 +241,31 @@ function validateValueSources(fp) {
     else sourceSummary.explicitSource += 1;
     validateSource(source, `样本 ${item.path}`, item.record, inherited);
 
-    const lengths = collectStringLengths(item.value);
-    const maxLen = lengths.length ? Math.max(...lengths) : 0;
-    if (maxLen >= 3900) sourceSummary.longValueRecords += 1;
+    const metrics = collectValueMetrics(item.value);
+    const maxLen = metrics.maxLen;
+    if (maxLen >= LONG_VALUE_THRESHOLD) sourceSummary.longValueRecords += 1;
+    if (metrics.chunked.length) sourceSummary.chunkedLongValueRecords += metrics.chunked.length;
+    for (const marker of metrics.badMarkers) {
+      sourceSummary.blockedTruncatedResultRecords += 1;
+      problems.push(`样本 ${item.path} ${marker}；不能把 RuyiTrace 可见片段、clip 片段或未知真实长度写入最终 fixture。`);
+    }
+    for (const chunkInfo of metrics.chunked) {
+      const chunkResult = validateChunkedValue(`${item.path}.${chunkInfo.path}`, chunkInfo.value);
+      problems.push(...chunkResult.problems);
+      warnings.push(...chunkResult.warnings);
+    }
     const valueIsMarkedTruncated = item.record.truncated === true || (source && source.truncated === true);
     const status = traceStatusOf(source, item.record);
     if (valueIsMarkedTruncated) problems.push(`样本 ${item.path} 标记为 truncated=true，不能作为最终回放值；请用同一 baseline 下的取证工具补采完整值。`);
-    if (isTraceValueSource(source, item.record) && (maxLen >= 3900 || isTruncatedTraceStatus(status) || valueIsMarkedTruncated)) {
-      problems.push(`样本 ${item.path} 来自 Trace 且疑似长字段截断；不能把 RuyiTrace 可见片段作为完整指纹值，请用 ruyiPage / Camoufox / CloakBrowser / 手动浏览器补采完整值。`);
+    if (isTraceValueSource(source, item.record) && (maxLen >= LONG_VALUE_THRESHOLD || isTruncatedTraceStatus(status) || valueIsMarkedTruncated)) {
+      sourceSummary.blockedTruncatedResultRecords += 1;
+      problems.push(`样本 ${item.path} 来自 Trace 且疑似长字段截断；不能把 RuyiTrace 4000 / 4096 可见片段作为完整指纹值，请用同一 baseline 下的 ruyiPage / Camoufox / CloakBrowser / 手动浏览器补采完整值。`);
     }
-    if (maxLen >= 3900 && inherited) {
-      problems.push(`样本 ${item.path} 是长字符串 / 大结果但未记录每条样本自己的 source、valueLength 和 hash；请补充完整采样来源，避免误把 Trace 4000 字符可见片段当成真实值。`);
+    if (maxLen >= LONG_VALUE_THRESHOLD && inherited) {
+      problems.push(`样本 ${item.path} 是长字符串 / 大结果但未记录每条样本自己的 source、valueLength 和 sha256；请补充完整浏览器采样来源，避免误把 Trace 4000 / 4096 字符可见片段当成真实值。`);
     }
-    if (maxLen >= 3900 && !('valueLength' in item.record) && !(source && 'valueLength' in source) && !('sha256' in item.record) && !(source && 'sha256' in source)) {
-      warnings.push(`样本 ${item.path} 长度达到 ${maxLen}，建议记录完整 valueLength 与 sha256，便于确认不是截断片段。`);
+    if (maxLen >= LONG_VALUE_THRESHOLD && !hasLengthAndHashOn(item.value, item.record, source)) {
+      problems.push(`样本 ${item.path} 长度达到 ${maxLen}，但缺少完整 valueLength 与 sha256；长指纹必须通过真实浏览器完整采样或分片保存并记录完整 hash。`);
     }
   }
   return { problems, warnings, sourceSummary };
@@ -342,7 +445,17 @@ function check(args) {
     baseline: baselineResult.result,
     fixtureBaselineId: fixtureResult.baselineId || '',
     counts: fixtureResult.counts,
-    sourceSummary: fixtureResult.sourceSummary || { totalRecords: 0, inheritedSource: 0, explicitSource: 0, traceSource: 0, sampledSource: 0, longValueRecords: 0, badSourceRecords: 0 },
+    sourceSummary: fixtureResult.sourceSummary || {
+      totalRecords: 0,
+      inheritedSource: 0,
+      explicitSource: 0,
+      traceSource: 0,
+      sampledSource: 0,
+      longValueRecords: 0,
+      chunkedLongValueRecords: 0,
+      blockedTruncatedResultRecords: 0,
+      badSourceRecords: 0
+    },
     badImplementationHits: envResult.hits,
     problems,
     warnings,
@@ -374,6 +487,8 @@ function renderMarkdown(result) {
   lines.push(`- Trace 来源样本：${result.sourceSummary.traceSource}`);
   lines.push(`- 自动化 / 手动浏览器采样来源样本：${result.sourceSummary.sampledSource}`);
   lines.push(`- 长字段样本：${result.sourceSummary.longValueRecords}`);
+  lines.push(`- 分片长字段样本：${result.sourceSummary.chunkedLongValueRecords}`);
+  lines.push(`- 被阻断的截断 / 可见片段样本：${result.sourceSummary.blockedTruncatedResultRecords}`);
   lines.push(`- 疑似猜值 / 默认值 / 模拟库来源样本：${result.sourceSummary.badSourceRecords}`);
   lines.push('', '## 检查的 env 文件');
   if (result.envFiles.length) for (const f of result.envFiles) lines.push(`- ${f}`);

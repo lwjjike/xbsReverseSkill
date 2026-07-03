@@ -224,29 +224,79 @@ DOM 方法如 `createElement`、`querySelector`、`querySelectorAll`、`getEleme
 
 ## `document.all`
 
-`document.all` 是特殊对象，必须优先使用 addon `createUndetectable`：
+`document.all` 是 HTMLDDA / 不可检测特殊对象，不得用普通对象、普通 Proxy 或 `undefined` 声称完整实现。
+
+选择 `isolated-vm` 时，优先使用 `xbs.dom.createDocument()` 自动提供的 `document.all`：
 
 ```js
-Object.defineProperty(document, 'all', {
-  value: addon.createUndetectable(function () {
-    return undefined;
+const document = xbs.dom.createDocument({
+  url: "https://example.com/",
+  html: '<main id="app"></main>',
+});
+
+// 需要禁用时必须在创建前声明，不要运行时强删。
+const withoutAll = xbs.dom.createDocument({ omitApis: ["document.all"] });
+const withoutAll2 = xbs.dom.createDocument({ features: { documentAll: false } });
+```
+
+期望关键行为至少包括：
+
+```js
+typeof document.all === 'undefined'
+document.all == null
+document.all !== undefined
+Boolean(document.all) === false
+'all' in document
+Object.prototype.toString.call(document.all) === '[object HTMLAllCollection]'
+typeof document.all.length === 'number'
+typeof document.all.item === 'function'
+typeof document.all.namedItem === 'function'
+```
+
+只有不使用 `xbs.dom.createDocument()`、而是手写 document 时，才手动使用 `xbs.createUndetectable(callback, handlers)`：
+
+```js
+const all = xbs.createUndetectable(function (value) {
+  if (arguments.length === 0 || value == null) return null;
+  // 中文说明：这里根据索引、id 或 name 返回元素；未命中返回 null。
+  return null;
+}, {
+  getter(target, property) {
+    // 中文说明：索引或命名属性可在这里 materialize；未命中必须放行给原型链。
+    return { intercept: false };
+  },
+  query(target, property) {
+    return { intercept: false };
+  },
+  descriptor(target, property) {
+    return { intercept: false };
+  },
+  enumerator(target) {
+    return Object.getOwnPropertyNames(target);
+  },
+});
+
+Object.setPrototypeOf(all, HTMLAllCollection.prototype);
+```
+
+手动模式硬规则：
+
+- `xbs.createUndetectable()` 只负责 `typeof all === "undefined"`、`Boolean(all) === false`、`all == null` 等不可检测语义。
+- `length / item / namedItem / [0] / 命名属性 / descriptor / enumerator` 需要由 handlers 与 `HTMLAllCollection.prototype` 配合实现。
+- `length / item / namedItem / constructor` 等原型链已有属性不要定义成 `document.all` 自有属性，否则会和真实浏览器不一致。
+- 更接近浏览器的安装方式是挂到 `Document.prototype` getter：
+
+```js
+Object.defineProperty(Document.prototype, "all", {
+  get: xbs.createGetter("all", 0, function () {
+    return all;
   }),
-  enumerable: false,
+  enumerable: true,
   configurable: true,
 });
 ```
 
-期望关键行为：
-
-```js
-typeof document.all === 'undefined'
-document.all == undefined
-document.all !== undefined
-Boolean(document.all) === false
-'all' in document
-```
-
-addon 不可用时只能用 `undefined` 近似，并必须在 notes、阶段报告和最终总结中标记真实性不足；不得声称完全一致。
+普通 Node + addon 模式也优先使用 addon `createUndetectable(callback, handlers)` 并遵循同样的 handlers / 原型链要求。addon 或 xbs 不可用时只能写明降级近似，并必须在 notes、阶段报告和最终总结中标记真实性不足；不得声称完全一致。
 
 ## Storage
 
@@ -330,6 +380,21 @@ installFingerprintValueReplay(globalThis, fingerprintFixture, {
 ```
 
 最终项目中不得包含用于采样的 Hook、Playwright、Puppeteer、CloakBrowser、ruyiPage 或其他浏览器自动化代码。
+
+## 高强度补充 WebAPI 对象清单
+
+从 Cloudflare / Turnstile / Akamai / DataDome / Kasada / Shape / F5 等高强度检测样本抽象出的通用对象范围如下。只有目标 trace / fixture / 取证证据访问到时才补，但一旦补就必须遵循 addon-first / xbs native-first、原型链、描述符、访问器、构造函数行为、`Symbol.toStringTag` 和 native-like 保护。
+
+| 对象 / API | 重点行为 | 补环境要求 |
+|---|---|---|
+| `navigator.permissions` / `PermissionStatus` | `query()` Promise、`state`、`onchange`、错误类型、权限名校验 | 采样真实浏览器；方法优先 native-like；返回对象原型链和 descriptor 不得用普通对象 |
+| `navigator.plugins` / `navigator.mimeTypes` | 长度、索引属性、命名属性、`item()`、`namedItem()`、枚举顺序、Plugin / MimeType 原型 | addon 可用时优先 `getMimeTypesAndPlugins(config)`；禁止空数组或普通数组作为高强度主路径 |
+| `speechSynthesis` / `SpeechSynthesisUtterance` | `getVoices()` 列表、异步 voiceschanged、语言、voiceURI、构造函数行为 | 只回放真实采样的 voices 摘要；构造函数、事件属性和方法 toString 需保护 |
+| `AudioContext` / `OfflineAudioContext` | 构造限制、采样率、`startRendering()` Promise、AudioBuffer 数据摘要 | 终端值走 `fingerprint-value-replay.md`；不要用 Node 音频模拟库猜值 |
+| `DOMRect` / layout dimensions | `getBoundingClientRect()`、`getClientRects()`、offset/client/scroll 尺寸、对象可枚举性 | 按目标元素和调用栈采样；DOMRect 原型链、只读属性、`toJSON` 行为要真实 |
+| `CSSStyleDeclaration` / `getComputedStyle` / `matchMedia` | 属性名、索引、`length`、media query 结果、CSS.supports | 使用真实浏览器样本；不要只返回空对象或固定字符串 |
+| `navigator.mediaDevices` / WebRTC | `enumerateDevices()`、`getUserMedia()` 错误模式、`RTCPeerConnection` 候选摘要 | 不暴露宿主 Node；需要权限或设备时记录降级，不伪造敏感设备信息 |
+| `screen` / viewport / DPR | `width/height/avail*`、`colorDepth`、`devicePixelRatio`、窗口尺寸关系 | 必须与取证工具 viewport、最终请求 UA / Client Hints 和 fingerprint baseline 一致 |
 
 ## 常见高风险 WebAPI 的 addon 覆盖规则
 

@@ -194,11 +194,28 @@ function buildXbsSelfCheckSource() {
     '      dom.text = document.querySelector(".hot").textContent;\n' +
     '      dom.hasAll = "all" in document;\n' +
     '      dom.allType = typeof document.all;\n' +
+    '      const allValue = document.all;\n' +
+    '      dom.allLooseNull = document.all == null;\n' +
+    '      dom.allStrictUndefined = document.all === undefined;\n' +
+    '      dom.allBoolean = Boolean(document.all);\n' +
+    '      dom.allLengthType = typeof document.all.length;\n' +
+    '      dom.allItemType = typeof document.all.item;\n' +
+    '      dom.allNamedItemType = typeof document.all.namedItem;\n' +
+    '      dom.allObjectToString = Object.prototype.toString.call(document.all);\n' +
+    '      dom.allOwnLength = Object.hasOwn(document.all, \"length\");\n' +
+    '      dom.allOwnItem = Object.hasOwn(document.all, \"item\");\n' +
+    '      dom.allOwnNamedItem = Object.hasOwn(document.all, \"namedItem\");\n' +
+    '      dom.allSameReference = allValue === document.all;\n' +
     '      dom.omitAllWorks = !("all" in withoutAll);\n' +
     '      dom.iframeContentDocument = !!(iframe && iframe.contentDocument && iframe.contentWindow && iframe.contentWindow.document === iframe.contentDocument);\n' +
     '      dom.ok = dom.documentCtor === "HTMLDocument" && dom.text === "hello" &&\n' +
     '        dom.url === "https://example.com/path?q=1" && dom.documentURI === dom.url &&\n' +
-    '        dom.hasAll && dom.allType === "undefined" && dom.omitAllWorks;\n' +
+    '        dom.hasAll && dom.allType === "undefined" && dom.allLooseNull &&\n' +
+    '        !dom.allStrictUndefined && dom.allBoolean === false &&\n' +
+    '        dom.allLengthType === "number" && dom.allItemType === "function" &&\n' +
+    '        dom.allNamedItemType === "function" && dom.allObjectToString === "[object HTMLAllCollection]" &&\n' +
+    '        dom.allOwnLength === false && dom.allOwnItem === false && dom.allOwnNamedItem === false &&\n' +
+    '        dom.allSameReference && dom.omitAllWorks;\n' +
     '    }\n' +
     '  } catch (error) {\n' +
     '    dom.error = String(error && error.message ? error.message : error);\n' +
@@ -275,7 +292,17 @@ function buildInstallDomSource() {
     '    url: document.URL,\n' +
     '    documentURI: document.documentURI,\n' +
     '    hasAll: "all" in document,\n' +
-    '    allType: typeof document.all\n' +
+    '    allType: typeof document.all,\n' +
+    '    allLooseNull: document.all == null,\n' +
+    '    allStrictUndefined: document.all === undefined,\n' +
+    '    allBoolean: Boolean(document.all),\n' +
+    '    allLengthType: typeof document.all.length,\n' +
+    '    allItemType: typeof document.all.item,\n' +
+    '    allNamedItemType: typeof document.all.namedItem,\n' +
+    '    allObjectToString: Object.prototype.toString.call(document.all),\n' +
+    '    allOwnLength: Object.hasOwn(document.all, \"length\"),\n' +
+    '    allOwnItem: Object.hasOwn(document.all, \"item\"),\n' +
+    '    allOwnNamedItem: Object.hasOwn(document.all, \"namedItem\")\n' +
     '  };\n' +
     '})()';
 }

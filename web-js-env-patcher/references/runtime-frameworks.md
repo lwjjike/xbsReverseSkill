@@ -96,11 +96,13 @@ throwTypeError
 
 ## xbs DOM 入口要求
 
-- `xbs.dom.createDocument(options)` 是当前 xbs DOM 的唯一公开入口；不要使用已删除的 attachDocument、installConstructors、createElement、createIframeDocument、patchApi、createProfile、snapshotSurface、getLastError 等旧 API。
-- `createDocument()` 支持 `url`、`html`、`skeleton`、`omitApis`、`disabledApis`、`removedApis`、`features.documentAll`、`features.iframeContentDocument`。
+- `xbs.dom.createDocument(options)` 是当前 xbs DOM 的唯一公开入口；不要使用已删除的 attachDocument、detachDocument、installConstructors、getConstructors、createElement、createIframeDocument、attachIframeDocument、detachIframeDocument、patchApi、removeApi、createProfile、getProfile、listProfiles、snapshotSurface、restoreSurface、getLastError 等旧 API。
+- `createDocument()` 支持 `url`、`html`、`skeleton`、`omitApis`、`disabledApis`、`removedApis`、`features.documentAll`、`features.iframeContentDocument`；`profile` 参数已删除，不得继续传入。
 - 默认不会把 `document` 挂到 `window`，补环境代码必须按 case 需要自行安装 `window.document`。
 - DOM 构造函数不会默认挂到 `window`，但 document / element 实例自身应具备正确内部构造函数和原型链，例如 `document.constructor.name === "HTMLDocument"`。
 - 禁用 DOM API 必须在创建 document 前通过 `omitApis` 或 `features` 声明，不要运行时强删已经发布的不可配置属性。
+- `document.all` 默认由 `xbs.dom.createDocument()` 提供，期望满足 `typeof document.all === "undefined"`、`Boolean(document.all) === false`、`document.all == null`、`document.all.length`、`item()`、`namedItem()` 与 `[object HTMLAllCollection]` 等行为；禁用时使用 `omitApis: ["document.all"]` 或 `features.documentAll: false`。
+- 只有不使用 `createDocument()` 而手写 document 时，才手动使用 `xbs.createUndetectable(callback, handlers)` 创建 `document.all`；此时必须把 `length / item / namedItem / Symbol.toStringTag` 放到 `HTMLAllCollection.prototype`，handlers 未命中时返回 `{ intercept: false }` 放行原型链，不要把这些属性定义为 `document.all` 自有属性。
 - iframe 不再使用旧 `createIframeDocument()` / `attachIframeDocument()`；iframe 的 `contentDocument` / `contentWindow` 由 iframe 元素按需创建，禁用时使用 `omitApis: ["HTMLIFrameElement.prototype.contentDocument"]`。
 - 当前 DOM 是补环境基础实现，不是完整浏览器内核；真实布局、CSSOM、MutationObserver、Canvas、WebGL 等仍按本 Skill 对应指纹 / 高强度 diff 流程补齐。
 

@@ -861,7 +861,7 @@ node scripts/check_env_realism.js --case-dir case --markdown
 - `Function.prototype.toString.call(getter / setter / method)` 包含 native-like 结果或来自 addon。
 - `Object.prototype.toString.call(navigator/localStorage/document)` 为对应 `[object Xxx]`。
 
-## 测试 50：document.all 必须优先使用 addon.createUndetectable
+## 测试 50：document.all 必须优先使用 native HTMLDDA 能力
 
 输入场景：目标 trace 或代码涉及 `document.all`。
 
@@ -873,14 +873,21 @@ node scripts/check_env_realism.js --case-dir case --require-document-all --markd
 
 期望：
 
-- 如果最终环境代码没有 `createUndetectable`，检查失败。
-- addon 可用时，`document.all` 应满足：
+- 选择 isolated-vm 时，优先使用 `xbs.dom.createDocument()` 默认提供的 `document.all`；不使用 `createDocument()` 手写 document 时，才用 `xbs.createUndetectable(callback, handlers)` 手动创建。
+- 普通 Node + addon 模式下，优先使用 addon `createUndetectable(callback, handlers)`。
+- 如果最终环境代码既没有 `xbs.dom.createDocument()`，也没有 `createUndetectable`，检查失败。
+- `document.all` 应满足：
   - `typeof document.all === "undefined"`
-  - `document.all == undefined`
+  - `document.all == null`
   - `document.all !== undefined`
   - `Boolean(document.all) === false`
   - `'all' in document === true`
-- addon 不可用时只能写明降级近似，不得宣称完全一致。
+  - `Object.prototype.toString.call(document.all) === "[object HTMLAllCollection]"`
+  - `typeof document.all.length === "number"`
+  - `typeof document.all.item === "function"`
+  - `typeof document.all.namedItem === "function"`
+- 手动 `createUndetectable` 模式下，`length / item / namedItem / constructor` 不应是 `document.all` 自有属性，应由 `HTMLAllCollection.prototype` 提供；handlers 未命中时返回 `{ intercept: false }` 放行原型链。
+- native 能力不可用时只能写明降级近似，不得宣称完全一致。
 
 ## 测试 51：用户已提供 RuyiTrace 日志时必须持续参考日志
 
@@ -2131,3 +2138,95 @@ node scripts/check_final_artifact.js --case-dir case --markdown
 - 明确指出缺少真实值来源，要求优先查看未截断 Trace；Trace 不可用时用当前已确认取证工具补采。
 - 不得把 AI 猜值、静态分析、默认值、随机值、mock 值、Node.js / jsdom / node-canvas / headless-gl 结果作为最终回放值。
 - 最终项目不得包含指纹采样 Hook 或浏览器自动化代码；只能回放已经采样并绑定同一 `baselineId` 的真实值。
+
+## 测试 122：高强度检测不能只围绕单 API 补环境
+
+输入场景：用户只提供目标 API cURL，响应为 403 / 429 / challenge / bot block / verify / 风控页，或浏览器从入口页访问后 API 才成功。
+
+期望：
+
+- 必须读取 `references/high-strength-browser-detection.md`。
+- 要求确认入口 HTML、前置 JS / 检测脚本、Cookie / Storage、动态资源和目标 API 的关系。
+- 不得只根据单个 API cURL 直接写补环境或反复修改 signer。
+- 阶段报告记录“高强度检测通用门禁”触发证据。
+
+## 测试 123：高强度指纹不得随机化或 AI 猜值
+
+输入场景：补环境代码对 Canvas / WebGL / Audio / Fonts / DOM geometry / Permissions / Plugins 使用 `Math.random()`、固定默认值、AI 经验值、node-canvas / headless-gl / jsdom 结果，或每次运行生成不同指纹。
+
+期望：
+
+- 检查失败或阶段门禁阻塞。
+- 要求优先使用 Trace 未截断值；Trace 缺失 / 截断时使用用户已确认取证工具在同一 `baselineId` 下采样。
+- `fingerprint.fixture.json` 必须记录 `source / capturedBy / traceStatus / baselineId / valueLength / hash / truncated`。
+
+## 测试 124：自动化 / CDP / Headless 风险必须前置处理
+
+输入场景：目标疑似高强度检测，但取证阶段准备先用普通 headless Playwright / Puppeteer / Selenium / 系统浏览器探测，或检测到 `navigator.webdriver`、Selenium / PhantomJS / NightmareJS honeypot、CDP / DevTools 侧信道、`isTrusted=false` 交互风险。
+
+期望：
+
+- 必须回到 `browser-acquisition.md` 让用户确认 ruyiPage / Camoufox / CloakBrowser / 手动浏览器等高保真取证路径。
+- 不得先普通自动化失败后再切换。
+- 首次成功取证后固定 fingerprint baseline；后续不得混用随机 profile。
+
+## 测试 125：UA / Client Hints / TLS / Header 与取证 baseline 不一致必须阻塞
+
+输入场景：浏览器取证使用 Firefox 或某一套 UA / locale / timezone / proxy，但最终请求 Header 伪装 Chrome、Client Hints 不匹配、普通 fetch / requests 无 TLS impersonate、或代理 / IP / 地区变化。
+
+期望：
+
+- 必须读取 `tls-request-validation.md` 与 `session-request-chain.md`。
+- 阻塞最终真实请求，要求统一 UA、UA-CH、Accept-Language、Sec-Fetch、Referer、Origin、Header 顺序、TLS JA3/JA4、代理 / IP 和 fingerprint baseline。
+- 不得把网络一致性问题误判成 JS 补环境失败。
+
+## 测试 126：Permissions / Plugins / MimeTypes 进入范围后不能用普通对象糊弄
+
+输入场景：Trace 或目标 JS 访问 `navigator.permissions.query`、`navigator.plugins`、`navigator.mimeTypes`、PluginArray / MimeTypeArray 方法和描述符。
+
+期望：
+
+- 必须读取 `env-object-model.md` 的高强度补充 WebAPI 对象清单。
+- addon 可用时 plugins / mimeTypes 优先 `getMimeTypesAndPlugins(config)`；集合对象优先 native collection。
+- Permissions API 要采样 Promise 行为、`PermissionStatus` 原型链、`state`、事件属性和错误类型。
+- 不得返回空数组、普通对象或同步假值作为高强度主路径。
+
+## 测试 127：请求顺序和入口页状态链必须进入最终 Session
+
+输入场景：目标 API 依赖入口 HTML、动态 JS、首访 Cookie、Storage、challenge / telemetry 资源或前置接口；最终项目只在 `final.js` 中直接请求目标 API。
+
+期望：
+
+- `session-request-chain.md` 检查失败或人工门禁阻塞。
+- 最终入口必须在同一 TLS 指纹兼容 Session 中完成入口页 / 动态资源刷新 / Cookie 或状态链更新 / 参数生成 / 目标 API 请求。
+- 如果用户选择只输出本地参数，必须明确不发真实请求，不能伪造请求成功。
+
+## 测试 128：高强度失败排查顺序必须先于反复改 env
+
+输入场景：参数不一致或最终请求失败，模型准备直接修改 `env.js` 中某个 WebAPI 返回值。
+
+期望：
+
+- 先按 `high-strength-browser-detection.md` 排查：是否风控页、入口页缺失、Cookie / Storage 过期、UA / TLS / IP / Header 不一致、baseline 混用、trace 截断、指纹缺样本、自动化暴露、请求顺序缺失。
+- 排除以上问题后，才定位目标 JS 补环境对象、writer 或 signer 逻辑。
+- 排查结论写入阶段报告、代码变更记忆和最终总结。
+
+## 测试 129：长指纹日志 4000 / 4096 截断不得作为最终值
+
+输入场景：RuyiTrace / NDJSON 中记录了 `canvas.toDataURL()`、`WebGLRenderingContext.readPixels()`、`navigator.gpu.requestAdapter()`、`OfflineAudioContext.startRendering()` 或类似长指纹 API 的返回值，日志中可见字符串长度为 4000、4096 或接近阈值。
+
+执行：
+
+```bash
+node scripts/import_ruyitrace_log.js --input trace.ndjson --case-dir case --truncation-threshold 3900 --markdown
+node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl --markdown
+```
+
+期望：
+
+- `import_ruyitrace_log.js` 在摘要中把该字段标记为疑似截断，真实长度为 `unknown`，只记录可见长度和可见片段 hash。
+- `fingerprint.fixture.json` 如果直接把 trace 可见片段写成最终 `result`，检查失败。
+- 必须使用用户已确认的 ruyiPage / Camoufox / CloakBrowser / 手动浏览器在同一 `baselineId` 下补采完整浏览器真实值。
+- 使用 `generate_fingerprint_hook.js` 生成的采样 Hook 时，复制结果前必须执行 `await window.__WEB_JS_ENV_PATCHER_FINALIZE_FINGERPRINT__()`；Hook 不得包含 `clip(result, 4096)`、`slice(0, 4096)` 等裁剪逻辑。
+- 完整长值直接保存或分片保存均可；分片保存必须记录 `encoding: "string-chunks"` 或 `encoding: "base64-chunks"`、`valueLength`、`chunkSize`、`chunks`、`sha256`、`truncated: false` 和真实来源。
+- 数值型返回值本身等于 4096 不一定是截断；本规则针对日志中的长字符串、长数组、base64、序列化对象和二进制编码结果。

@@ -79,6 +79,20 @@
 - CloakBrowser：从启动开始 `humanize=True`，使用官方包装器 patch 后的 click / type / drag / scroll 等方法；如果退回 `page.evaluate` 合成事件，视为 `isTrusted=false` 风险并暂停确认。
 - 用户手动：登录、MFA、验证码答案和高风险验证优先让用户在已确认取证浏览器中手动完成。
 
+## 高强度自动化痕迹与取证风险
+
+如果目标疑似高强度检测，不允许先用普通 headless Playwright / Puppeteer / Selenium / 系统浏览器探测再切换工具。必须从第一次打开页面起使用用户确认的 ruyiPage、Camoufox、CloakBrowser 或用户手动浏览器，并固定 fingerprint baseline。
+
+取证阶段重点检查并记录：
+
+- `navigator.webdriver` 是否为普通浏览器状态。
+- `window._selenium`、`window.callSelenium`、`window.callPhantom`、`window._phantom`、`window.__nightmare`、`window.domAutomation`、`window.domAutomationController` 等自动化 honeypot 是否暴露。
+- CDP / DevTools / Runtime 侧信道、console / stack 异常、debugger 检测或页面可见自动化 hook 是否存在。
+- UA 中是否含 headless 特征，plugins / mimeTypes / permissions / WebGL / Canvas 是否呈现空值、随机化或隐私插件伪装。
+- 鼠标、键盘、拖拽、滚动是否走可信输入；普通 `dispatchEvent` 不作为高风控主路径。
+- Profile、Cookie、localStorage、sessionStorage、IndexedDB、权限状态是否属于同一 case；空 profile 或每次随机 profile 必须暂停确认。
+
+
 普通 `dispatchEvent(new MouseEvent(...))`、`new KeyboardEvent(...)`、`new PointerEvent(...)` 默认是高风险合成事件，不能作为验证码或高风控交互的主路径。无法保证可信输入时，暂停并让用户选择手动完成、切换工具或明确接受风险。
 
 ## 验证码接口取证门禁

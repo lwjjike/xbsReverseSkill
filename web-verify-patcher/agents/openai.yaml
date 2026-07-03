@@ -1,0 +1,4 @@
+interface:
+  display_name: "Web Verify Patcher"
+  short_description: "识别网页验证码类型、厂商产品，并分析切片乱序还原和授权验证流程"
+  default_prompt: "使用 $web-verify-patcher 识别网页验证码类型、厂商产品，给出方案；如果遇到切片乱序图片，先判断分块还原逻辑，再在确认授权后编排验证分析流程。"

@@ -41,7 +41,7 @@ function usage() {
   node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --markdown
   node scripts/import_ruyitrace_log.js --input <trace.ndjson> --case-dir case --truncation-threshold 3900 --json
 
-说明：复制 RuyiTrace NDJSON 日志到 case/ruyi-trace/logs/，生成 notes/ruyitrace-summary.md，并标记接近 4000 字符的字段为“疑似被 RuyiTrace 截断”。`;
+说明：复制 RuyiTrace NDJSON 日志到 case/ruyi-trace/logs/，生成 notes/ruyitrace-summary.md，并标记接近 4000 / 4096 字符的字段为“疑似被 RuyiTrace 截断”。`;
 }
 
 function exists(p) {
@@ -202,7 +202,7 @@ async function summarizeNdjson(file, options) {
       topFieldPaths: top(truncationState.byFieldPath, 20),
       topApis: top(truncationState.byApi, 20),
       examples: truncationState.examples,
-      rule: '可见长度达到阈值的字符串一律按疑似截断处理，真实长度为 unknown，只能确认至少达到可见长度。',
+      rule: '可见长度达到阈值的字符串一律按疑似截断处理；Canvas / WebGL / WebGPU / Audio 等长指纹值不得使用日志可见片段作为最终值，真实长度为 unknown，只能确认至少达到可见长度。',
     },
     examples,
   };
@@ -233,8 +233,8 @@ function renderMarkdown(result) {
       lines.push(`| ${item.line} | ${item.api} | ${item.fieldPath} | ${item.visibleLength} | unknown，疑似被 RuyiTrace 截断 | ${item.stack || '未记录'} | ${item.visibleSha256} |`);
     }
     lines.push('', '### 长字段补采要求');
-    lines.push('- 不要根据 RuyiTrace 中的 4000 字符可见值判断完整加密参数、长 token、长 Cookie、长 body 或 dataURL 的真实长度。');
-    lines.push('- 如果该字段影响签名或补环境验证，必须通过 HAR/cURL、ruyiPage 网络抓包、专用 Hook 分片落盘、或最终 Node.js signer 输出重新确认完整值。');
+    lines.push('- 不要根据 RuyiTrace 中的 4000 / 4096 字符可见值判断完整加密参数、长 token、长 Cookie、长 body、Canvas dataURL、WebGL readPixels、WebGPU adapter 信息或 Audio channel data 的真实长度。');
+    lines.push('- 如果该字段影响签名、补环境验证或指纹回放，必须通过 HAR/cURL、ruyiPage / Camoufox / CloakBrowser / 手动浏览器采样、专用 Hook 分片落盘、或最终 Node.js signer 输出重新确认完整值。');
     lines.push('- 写入 `notes/missing-env-priority.md` 时标明 `actualLength: unknown`、`minLength: 可见长度`、`truncationSuspected: true`。');
   }
 

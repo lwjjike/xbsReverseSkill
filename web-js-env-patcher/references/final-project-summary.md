@@ -50,9 +50,9 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - “环境与指纹 API 调用回放明细”必须按类别分组，例如 `window / global`、`navigator`、`document / DOM`、`canvas`、`webgl` 等；每条记录必须精确到访问的属性、调用的方法、构造函数或 getter / setter，不得只写“补了 navigator / canvas”。
 
-- “指纹值回放”必须记录值来源优先级执行情况：是否优先查看 Trace、Trace 是否未截断可用、Trace 缺失 / 未覆盖 / 疑似截断时使用了哪个已确认取证工具补采、是否绑定同一 `baselineId`、是否存在 AI 猜值 / 默认值 / 静态推断进入最终 fixture。
+- “指纹值回放”必须记录值来源优先级执行情况：是否优先查看 Trace、Trace 是否未截断可用、Trace 缺失 / 未覆盖 / 4000 或 4096 长字段疑似截断时使用了哪个已确认取证工具补采、是否绑定同一 `baselineId`、是否存在 AI 猜值 / 默认值 / 静态推断进入最终 fixture；长指纹值必须记录完整 `valueLength`、完整 `sha256`、分片信息和 `truncated: false`。
 
-- “高强度环境检测覆盖矩阵”用于记录异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链、MutationObserver、userAgentData、window.chrome、媒体能力、网络 Header / Client Hints 一致性、动态 JS 多版本回归等是否涉及、是否采样、是否已修复和遗留风险。
+- “高强度环境检测覆盖矩阵”用于记录异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链、MutationObserver、userAgentData、window.chrome、媒体能力、网络 Header / Client Hints 一致性、动态 JS 多版本回归等是否涉及、是否采样、是否已修复和遗留风险。高强度通用排查文档 `high-strength-browser-detection.md` 的入口页优先、指纹随机化风险、自动化痕迹、TLS / Header / Session 一致性和失败排查顺序也必须体现在本矩阵中。
 
 
 
@@ -383,7 +383,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 敏感值处理：Cookie / Authorization / token / localStorage 等不写明文，只写脱敏摘要
 
-- 长字段处理：超过采集上限或疑似截断的字段只写可见长度、最小长度、hash 和 `真实长度 unknown`
+- 长字段处理：超过采集上限或 4000 / 4096 疑似截断的字段只写可见长度、最小长度、hash 和 `真实长度 unknown`；不得作为最终回放值，必须记录补采工具、完整 `valueLength`、完整 `sha256`、分片信息和 `truncated: false`，否则写明阻塞
 
 - API 总数：
 
@@ -530,6 +530,11 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 | canPlayType / mediaSession | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
 | 网络 Header / Client Hints 一致性 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
 | 动态 JS 多版本回归 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 |  |
+| TLS / JA3 / JA4 / Header 顺序 / Session 链 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | 最终请求与取证 baseline 一致 |
+| 自动化 / CDP / Headless / isTrusted 风险 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | 取证阶段从一开始使用已确认高保真工具 |
+| Permissions / Plugins / MimeTypes | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | addon-first，禁止普通数组 / 空对象主路径 |
+| Canvas / WebGL / Audio / Speech / Fonts / DOM 几何随机化风险 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | 禁止 AI 猜值、默认值和每次随机化 |
+| 入口 HTML / 前置 JS / 状态链 | 未涉及 / 已涉及 | 已采样 / 未采样 | 已对比 / 未对比 | 通过 / 部分通过 / 未修复 | 不得只围绕单 API cURL 判断 |
 
 
 
@@ -539,11 +544,13 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 - 是否涉及指纹 API：
 
-- 值来源优先级执行情况：已优先检查 Trace / 未选择 Trace / Trace 缺失 / Trace 未覆盖 / Trace 疑似截断 / Trace baseline 冲突 / 不涉及
+- 值来源优先级执行情况：已优先检查 Trace / 未选择 Trace / Trace 缺失 / Trace 未覆盖 / Trace 4000 或 4096 长字段疑似截断 / Trace baseline 冲突 / 不涉及
 
 - Trace 未截断可用值：API、字段路径、证据文件、长度、hash：
 
 - Trace 不可用或疑似截断时的补采工具：ruyiPage / Camoufox / CloakBrowser / 用户手动浏览器 / 其他；采样是否复用同一 `baselineId`：
+
+- 长指纹值完整性：涉及的 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何 API、trace 可见长度、真实长度是否 unknown、是否已补采完整值、`valueLength`、`sha256`、分片数量、`truncated: false`：
 
 - 真实浏览器采样来源：
 

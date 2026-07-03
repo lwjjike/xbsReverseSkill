@@ -127,6 +127,17 @@ function renderMarkdown(result) {
       lines.push('- document.constructor.name：' + (result.xbs.dom.documentCtor || '未知'));
       lines.push('- document 默认预挂载到 window：' + (result.xbs.dom.windowDocumentWasPreinstalled ? '是' : '否'));
       lines.push('- document.all 类型：' + (result.xbs.dom.allType || '未知'));
+      lines.push('- document.all == null：' + (result.xbs.dom.allLooseNull ? '是' : '否'));
+      lines.push('- document.all === undefined：' + (result.xbs.dom.allStrictUndefined ? '是' : '否'));
+      lines.push('- Boolean(document.all)：' + String(result.xbs.dom.allBoolean));
+      lines.push('- document.all.length 类型：' + (result.xbs.dom.allLengthType || '未知'));
+      lines.push('- document.all.item 类型：' + (result.xbs.dom.allItemType || '未知'));
+      lines.push('- document.all.namedItem 类型：' + (result.xbs.dom.allNamedItemType || '未知'));
+      lines.push('- Object.prototype.toString.call(document.all)：' + (result.xbs.dom.allObjectToString || '未知'));
+      lines.push('- document.all.length 是自有属性：' + (result.xbs.dom.allOwnLength ? '是' : '否'));
+      lines.push('- document.all.item 是自有属性：' + (result.xbs.dom.allOwnItem ? '是' : '否'));
+      lines.push('- document.all.namedItem 是自有属性：' + (result.xbs.dom.allOwnNamedItem ? '是' : '否'));
+      lines.push('- document.all 引用稳定：' + (result.xbs.dom.allSameReference ? '是' : '否'));
       lines.push('- omitApis 禁用 document.all：' + (result.xbs.dom.omitAllWorks ? '通过' : '未通过'));
       lines.push('- iframe contentDocument：' + (result.xbs.dom.iframeContentDocument ? '可用' : '未确认'));
     }

@@ -99,6 +99,9 @@ function collectDocumentAllBehavior(document) {
     itemType: typeof document.all.item,
     namedItemType: typeof document.all.namedItem,
     objectToString: Object.prototype.toString.call(document.all),
+    ownLength: Object.hasOwn(document.all, 'length'),
+    ownItem: Object.hasOwn(document.all, 'item'),
+    ownNamedItem: Object.hasOwn(document.all, 'namedItem'),
     sameReference: value === document.all,
   };
 }
@@ -113,6 +116,9 @@ const expected = {
   itemType: 'function',
   namedItemType: 'function',
   objectToString: '[object HTMLAllCollection]',
+  ownLength: false,
+  ownItem: false,
+  ownNamedItem: false,
   sameReference: true,
 };
 
@@ -134,7 +140,7 @@ if (!result.ok) {
 result;
 ```
 
-如果纯 JS、当前 addon `createUndetectable`、当前 xbs `createUndetectable` 或 `xbs.dom.createDocument()` 都无法让该测试通过，就必须把它标记为 native 能力缺口，并建议新增或修正 API，例如 `createHTMLDDACollection()` 或增强 `createUndetectable()` / `xbs.dom.createDocument()` 的 HTMLAllCollection 能力。
+如果纯 JS、当前 addon `createUndetectable(callback, handlers)`、当前 xbs `createUndetectable(callback, handlers)` 或 `xbs.dom.createDocument()` 都无法让该测试通过，才允许把它标记为 native 能力缺口。标记前必须先排除用法错误：选择 isolated-vm 时应优先使用 `xbs.dom.createDocument()` 默认提供的 `document.all`；手动创建时 handlers 未命中必须返回 `{ intercept: false }`，并把 `length / item / namedItem / Symbol.toStringTag` 放到 `HTMLAllCollection.prototype`，不能把它们做成 `document.all` 自有属性。确认仍无法通过后，再建议新增或修正 API，例如增强 `createUndetectable()` / `xbs.dom.createDocument()` 的 HTMLAllCollection 能力。
 
 ## 建议 API 设计输出格式
 

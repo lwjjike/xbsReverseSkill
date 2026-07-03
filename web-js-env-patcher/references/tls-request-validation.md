@@ -59,6 +59,20 @@ python -m pip install cffi_curl
 python -m pip install cycronet
 ```
 
+## 高强度网络指纹一致性
+
+高强度检测中，TLS 指纹兼容不是单独开关，而是要与浏览器取证 baseline 一起看。最终请求前必须核对：
+
+- TLS / JA3 / JA4、ALPN、HTTP/2 / HTTP/3 能力与所选 impersonate 浏览器族一致。
+- `User-Agent` 与 `navigator.userAgent` 一致。
+- `sec-ch-ua`、`sec-ch-ua-platform`、`sec-ch-ua-mobile` 与 `navigator.userAgentData` 一致；取证浏览器是 Firefox 时不要伪造 Chrome Client Hints。
+- `Accept-Language` 与 `navigator.language/languages` 一致。
+- `Accept-Encoding`、Header 顺序、HTTP/2 pseudo-header 顺序、`sec-fetch-*`、`Referer`、`Origin` 与 HAR / 浏览器请求链一致。
+- 代理 / IP / 地区、timezone、locale、WebRTC 策略与 fingerprint baseline 一致。
+- Cookie jar 和 Storage 状态来自同一 session 链路，不复制旧 cURL 中已过期的风控状态。
+
+如果以上任一项冲突，先修正请求链和 fixture，不要把失败直接归因于 JS 补环境。
+
 ## Session 模式硬规则
 
 最终请求不再区分单请求或请求链。只要用户选择发送真实请求或交付可请求的 `final.js` / `final.py`，必须读取 `session-request-chain.md` 并满足：
