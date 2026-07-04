@@ -12,6 +12,7 @@
 - 需要收集 JS bundle、chunk、sourcemap。
 - 需要注入最小 Hook、观察 XHR/fetch、Cookie 或 Storage 写入。
 - 页面出现验证码、登录、MFA、设备验证或风控验证。
+- 需要采集用户手动完成验证码后的成功基线样本。
 - 用户明确要求避免普通自动化、CDP 或 WebDriver 检测。
 
 ## 硬性规则
@@ -22,6 +23,7 @@
 - 已选模式后，后续所有浏览器取证动作都沿用该模式。
 - 工具不可用、路径缺失、runtime 不合格、需要登录或必须更换工具时，暂停并让用户确认；不要静默 fallback 到普通浏览器自动化。
 - 出现登录、验证码、MFA、设备验证时暂停，让用户手动完成；不要自动破解、代过验证、注入 token 或调用第三方打码服务。
+- 授权取证中需要建立成功基线时，用户手动完成验证码；AI 只采集经确认的证据、成功状态和时间线，不替用户提交或代过。
 - 浏览器取证只用于识别和证据采集，不进入最终交付方案作为自动化执行路径。
 
 ## 取证模式
@@ -226,9 +228,46 @@ npm install cloakbrowser puppeteer-core
 4. 工具不可用时，暂停并让用户确认安装、提供路径、降级或切换模式。
 5. 按确认模式从第一次导航开始打开页面。
 6. 如需要登录、验证码、MFA 或设备验证，暂停等待用户手动完成。
-7. 只执行最少必要操作：截图、网络捕获、脚本列表、接口 initiator、页面文案和组件特征。
-8. 用采集到的 HTML、URL、文案或截图元信息运行 `scripts/classify_verify.py`。
-9. 输出类型、厂商、命中信号、置信度和推荐方案。
+7. 如果本次取证用于后续验证方案或失败复盘，采集用户手动成功样本基线：
+   - 默认同一授权目标至少 5 次成功样本。
+   - 如果过程中出现新的验证码类型，每个新类型至少补到 2 次成功样本。
+   - 每轮记录验证码类型、厂商、变体、成功前后截图或截图元信息、验证码区域 DOM 摘要、脚本/iframe URL、关键请求摘要、成功 UI/callback/response token 或服务端成功状态、challenge id、时间线和刷新/切题信息。
+   - 动态切题时不要只保留最后一轮；每一轮都作为独立 `success_samples` 记录。
+8. 用 `scripts/evaluate_success_baseline.py --samples success_samples.json --pretty` 评估成功基线；不足时输出强提示，用户确认后仍可继续离线分析或受控验证。
+9. 只执行最少必要操作：截图、网络捕获、脚本列表、接口 initiator、页面文案和组件特征。
+10. 用采集到的 HTML、URL、文案或截图元信息运行 `scripts/classify_verify.py`。
+11. 输出类型、厂商、命中信号、置信度、推荐方案和成功基线状态。
+
+## 成功样本基线格式
+
+建议把用户手动完成的成功样本整理为：
+
+```json
+{
+  "authorization_scope": "用户确认的自有/授权测试目标",
+  "provider": "custom-or-unknown",
+  "success_samples": [
+    {
+      "sample_id": "manual-success-001",
+      "success": true,
+      "captcha_type": "slider",
+      "captcha_variant": null,
+      "evidence": {
+        "screenshot_before": "<relative path or description>",
+        "screenshot_after": "<relative path or description>",
+        "dom_summary": "<captcha container summary>",
+        "script_or_iframe_urls": ["<url without secrets>"],
+        "network_summary": ["<request/response summary without secrets>"],
+        "success_signal": "UI 显示验证成功 / callback 被调用 / 服务端返回成功",
+        "challenge_id": "<non-secret challenge id if available>",
+        "timeline": ["challenge rendered", "user solved", "success state observed"]
+      }
+    }
+  ]
+}
+```
+
+不要把 Cookie、Authorization、账号材料、API key 或可复用 token 写入样本文件；需要说明时只写字段名、状态和脱敏摘要。
 
 ## 用户确认模板
 

@@ -9,6 +9,8 @@
 1. 先给开源/本地方案：能离线处理的优先用 ddddocr、OpenCV、Tesseract、Whisper/faster-whisper、YOLO/CLIP/VLM、规则解析或官方测试环境。
 2. 再给通过率不足时的备选：打码平台、人工接管、厂商支持或官方集成诊断。平台只作为用户自行选择的授权 QA 备选，不默认调用。
 3. 最后给切换条件：什么时候从开源方案切到平台/人工，什么时候应停在厂商集成诊断。
+4. 第二阶段不要无限沿用当前方案：同一授权目标、同一验证码类型、同一用户选择方案连续 5 次失败且没有成功，图片/坐标/轨迹/切片还原/补环境/challenge 新鲜度均无明显异常时，主动建议打码平台作为授权 QA 对照。
+5. 真实网页验证前先建立用户手动成功样本基线：同一授权目标至少 5 次成功；如出现动态切题，每个验证码类型至少 2 次成功。基线不足时必须强提示，但用户确认后可继续离线分析或受控验证。
 
 常见备选平台按类型选择：
 
@@ -17,21 +19,32 @@
 - Arkose/FunCaptcha 小游戏：2Captcha、CapSolver、Anti-Captcha、NopeCHA，或 人工接管。
 - PoW、无感评分、WAF、活体类：优先做官方接入和环境诊断；平台只用于授权对照测试或不建议使用。
 
+## 第二阶段方案切换规则
+
+在用户确认方案并开始授权验证后，按 `references/verification-workflow.md` 记录 attempts JSON，并用 `scripts/evaluate_verification_attempts.py` 判断是否切换：
+
+- 先用 `scripts/evaluate_success_baseline.py` 检查用户手动成功样本；缺少成功基线时，不要把失败原因过早归咎于图片识别、轨迹或平台。
+- `slider`、`image-restore/tile-scramble`、`click-select`、`grid`、`rotate`、`token-widget`：满足 5 次失败门槛且诊断均为 `ok` 时，优先推荐平台对照，输出 `recommended_next_route: platform-control`。
+- `text`、`math`、`audio`、`qa-logic`：满足 5 次失败门槛且图片/OCR/ASR/题面解析无明显异常时，可切平台或人工复核，用来判断本地识别是否低通过率。
+- `drag-drop`、`trace-draw`、`scratch`、`area-select`、`difference-click`、`font-identify`、`semantic-reasoning`、`game-challenge`、`multi-step`：先检查坐标、轨迹、多轮状态和题面变化；诊断均为 `ok` 后再推荐平台/人工接管对照。
+- `pow-challenge`、`waf-challenge`、`biometric-liveness`：不默认推荐普通打码平台；优先官方协议、环境诊断、厂商日志、人工复核或厂商支持。
+- 若失败不足 5 次、已有成功、或存在明确坐标/轨迹/图片/乱序还原/补环境/challenge 过期问题，先继续当前路线并修复阻塞项。
+
 ## 类型方案速查
 
 | 类型 | 开源/本地优先 | 低通过率时备选 | 切换条件 |
 | --- | --- | --- | --- |
 | `text` | ddddocr、Tesseract、OpenCV 预处理 | 云码/JFBYM、超级鹰、2Captcha ImageToText、Anti-Captcha Image | 扭曲/噪声导致 OCR 不稳定 |
 | `math` | OCR + 运算符归一化 + 安全求值 | 云码/JFBYM、超级鹰、2Captcha Normal Captcha | 表达式干扰、中文数字或应用题 |
-| `slider` | ddddocr slide-match、OpenCV 匹配、轨迹校准 | 云码/JFBYM、超级鹰、CapSolver、2Captcha GeeTest/slider | 缺口弱、背景乱序、行为评分失败 |
-| `click-select` | OCR/模板匹配、YOLO、VLM 坐标 | 云码/JFBYM、超级鹰、2Captcha Coordinates、CapSolver ComplexImageTask | 目标重叠、语义复杂、多轮点选 |
-| `rotate` | OpenCV 角度估计、特征匹配、VLM | 云码/JFBYM、超级鹰、CapSolver/2Captcha 图片任务 | 对称图、角度映射非线性 |
-| `grid` | 分格 + 分类模型、YOLO/CLIP/VLM | 2Captcha、CapSolver、CapMonster Cloud、Anti-Captcha、NopeCHA | 多轮、跨格、题面语义复杂 |
+| `slider` | ddddocr slide-match、OpenCV 匹配、轨迹校准 | 云码/JFBYM、超级鹰、CapSolver、2Captcha GeeTest/slider | 缺口弱、背景乱序、行为评分失败；或 5 次失败且图像/坐标/轨迹/环境均正常 |
+| `click-select` | OCR/模板匹配、YOLO、VLM 坐标 | 云码/JFBYM、超级鹰、2Captcha Coordinates、CapSolver ComplexImageTask | 目标重叠、语义复杂、多轮点选；或 5 次失败且识别/坐标/环境均正常 |
+| `rotate` | OpenCV 角度估计、特征匹配、VLM | 云码/JFBYM、超级鹰、CapSolver/2Captcha 图片任务 | 对称图、角度映射非线性；或 5 次失败且角度/坐标/轨迹/环境均正常 |
+| `grid` | 分格 + 分类模型、YOLO/CLIP/VLM | 2Captcha、CapSolver、CapMonster Cloud、Anti-Captcha、NopeCHA | 多轮、跨格、题面语义复杂；或 5 次失败且格子/坐标/环境均正常 |
 | `audio` | faster-whisper/Whisper、降噪、白名单纠错 | 2Captcha Audio、CapMonster/Anti-Captcha 音频或人工任务 | 强噪声、口音、多语言 |
 | `drag-drop` | 目标检测/VLM、DOM 坐标、释放点校准 | 云码/JFBYM、超级鹰、CapSolver ComplexImageTask、人工接管 | 吸附/动画/行为评分复杂 |
 | `trace-draw` | OpenCV 路径提取、骨架化、点列重采样 | 云码/JFBYM、超级鹰、人工标注 | 路径遮挡、采样格式未知 |
 | `scratch` | canvas 区域、覆盖轨迹、状态差分 | 人工接管、云码/JFBYM 定制、超级鹰定制 | 阈值未知、刮开后二次题 |
-| `image-restore` | 先判定切片乱序；页面 `tileOrder`/CSS/canvas 还原；OpenCV/Pillow 边缘连续性 | 云码/JFBYM、超级鹰、CapSolver/2Captcha 图片任务 | 重复纹理、随机裁剪、顺序字段加密、参数绑定 |
+| `image-restore` | 先判定切片乱序；页面 `tileOrder`/CSS/canvas 还原；OpenCV/Pillow 边缘连续性 | 云码/JFBYM、超级鹰、CapSolver/2Captcha 图片任务 | 重复纹理、随机裁剪、顺序字段加密、参数绑定；或 5 次失败且还原/坐标/轨迹/环境均正常 |
 | `area-select` | 检测/分割、SAM/YOLO、VLM 框选 | 云码/JFBYM、超级鹰、CapSolver ComplexImageTask | 边界模糊、多目标、多边形要求 |
 | `difference-click` | 图像配准 + 差分、显著性检测、VLM | 云码/JFBYM、超级鹰、人工标注 | 压缩噪声、差异细微 |
 | `font-identify` | OCR + 字形特征、模板、VLM | 云码/JFBYM、超级鹰人工/坐标 | 字体相近、缩放抗锯齿 |
@@ -43,8 +56,8 @@
 | `multi-step` | 逐轮取证，每轮按子类型选择工具 | 按子类型平台，人工接管 | 多轮混合、状态过期 |
 | `qa-logic` | 文本解析、规则库、本地 LLM/VLM、人工复核 | 云码/JFBYM、超级鹰、2Captcha Normal Captcha | 题库动态或语义歧义 |
 | `biometric-liveness` | 官方 SDK、设备权限、人工审核、可访问性方案 | 不建议平台；合规授权下联系厂商/人工审核 | 隐私合规、误识别、设备兼容 |
-| `token-widget` | 官方测试 key、sitekey/action/callback/TTL、服务端日志 | 2Captcha、CapSolver、CapMonster Cloud、Anti-Captcha、YesCaptcha/NoCaptchaAI | 授权 QA 需要 token 对照 |
-| `waf-challenge` | 真实浏览器取证、WAF 日志、TLS/HTTP/JS 环境诊断 | 厂商支持、人工复核；授权对照可看 CapSolver/CapMonster/2Captcha | 误伤真实用户或环境指纹异常 |
+| `token-widget` | 官方测试 key、sitekey/action/callback/TTL、服务端日志 | 2Captcha、CapSolver、CapMonster Cloud、Anti-Captcha、YesCaptcha/NoCaptchaAI | 授权 QA 需要 token 对照；或 5 次失败且 sitekey/action/TTL/环境均正常 |
+| `waf-challenge` | 真实浏览器取证、WAF 日志、TLS/HTTP/JS 环境诊断 | 厂商支持、人工复核；授权对照谨慎评估平台支持 | 误伤真实用户或环境指纹异常；普通打码平台不是默认路线 |
 | `unknown-custom` | 补 HTML/脚本/截图/接口，归入相近类型 | 云码/JFBYM 定制、超级鹰定制、通用图片/坐标任务 | 证据不足或自研混淆 |
 
 ## `text`

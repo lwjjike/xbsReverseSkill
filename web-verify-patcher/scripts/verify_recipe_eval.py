@@ -38,9 +38,10 @@ def run_json(args: list[str]) -> dict[str, Any]:
 
 def check_references() -> dict[str, Any]:
     required = {
-        "references/verification-workflow.md": ["进入条件", "动作分级", "真实网页"],
+        "references/verification-workflow.md": ["进入条件", "动作分级", "真实网页", "成功样本基线", "evaluate_success_baseline.py", "5 次失败复盘门槛", "evaluate_verification_attempts.py"],
+        "references/browser-acquisition.md": ["用户手动成功样本", "至少 5 次成功样本", "每个新类型至少补到 2 次成功样本"],
         "references/open-source-recipes.md": ["ddddocr", "OpenCV", "Whisper", "切片乱序", "analyze_tile_restore.py"],
-        "references/solver-platform-recipes.md": ["请求模板", "API key", "不默认发送"],
+        "references/solver-platform-recipes.md": ["请求模板", "API key", "不默认发送", "授权 QA 对照"],
         "references/motion-and-coordinate.md": ["坐标体系", "滑块轨迹", "真实网页执行前检查"],
         "references/provider-execution-notes.md": ["极验", "Turnstile", "WAF"],
     }
@@ -200,6 +201,209 @@ def check_tile_restore() -> dict[str, Any]:
     return {"passed": passed, "details": details, "missing": []}
 
 
+def write_attempts(path: Path, captcha_type: str, attempts: list[dict[str, Any]], captcha_variant: str = "") -> None:
+    data = {
+        "authorization_scope": "授权测试目标",
+        "captcha_type": captcha_type,
+        "captcha_variant": captcha_variant,
+        "provider": "geetest" if captcha_type == "slider" else "custom-or-unknown",
+        "chosen_solution": f"open-source-{captcha_type}",
+        "attempts": attempts,
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def failed_attempt(status_overrides: dict[str, str] | None = None) -> dict[str, Any]:
+    diagnosis = {
+        "image": "ok",
+        "coordinates": "ok",
+        "track": "ok",
+        "tile_restore": "ok",
+        "browser_env": "ok",
+        "challenge_freshness": "ok",
+    }
+    if status_overrides:
+        diagnosis.update(status_overrides)
+    return {
+        "success": False,
+        "diagnosis_status": diagnosis,
+        "failure_reason": "服务端仍判定失败，离线诊断未发现明显异常",
+    }
+
+
+def check_attempt_evaluation() -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+
+        switch_path = tmp_dir / "switch.json"
+        write_attempts(switch_path, "slider", [failed_attempt() for _ in range(5)])
+        switch_report = run_json(["scripts/evaluate_verification_attempts.py", "--attempts", str(switch_path)])
+        details["switch"] = {
+            "switch_triggered": switch_report["switch_triggered"],
+            "route": switch_report["recommended_next_route"],
+            "decision": switch_report["escalation_decision"],
+            "send_request": switch_report["send_request"],
+        }
+
+        below_path = tmp_dir / "below.json"
+        write_attempts(below_path, "slider", [failed_attempt() for _ in range(4)])
+        below_report = run_json(["scripts/evaluate_verification_attempts.py", "--attempts", str(below_path)])
+        details["below_threshold"] = {
+            "switch_triggered": below_report["switch_triggered"],
+            "route": below_report["recommended_next_route"],
+        }
+
+        blocking_path = tmp_dir / "blocking.json"
+        write_attempts(blocking_path, "slider", [failed_attempt() for _ in range(4)] + [failed_attempt({"coordinates": "error"})])
+        blocking_report = run_json(["scripts/evaluate_verification_attempts.py", "--attempts", str(blocking_path)])
+        details["blocking"] = {
+            "switch_triggered": blocking_report["switch_triggered"],
+            "blocking_issue": blocking_report["blocking_issue"],
+            "route": blocking_report["recommended_next_route"],
+        }
+
+        success_path = tmp_dir / "success.json"
+        success_attempts = [failed_attempt() for _ in range(4)] + [failed_attempt()]
+        success_attempts[2]["success"] = True
+        write_attempts(success_path, "slider", success_attempts)
+        success_report = run_json(["scripts/evaluate_verification_attempts.py", "--attempts", str(success_path)])
+        details["success"] = {
+            "switch_triggered": success_report["switch_triggered"],
+            "route": success_report["recommended_next_route"],
+        }
+
+        tile_path = tmp_dir / "tile.json"
+        write_attempts(tile_path, "image-restore", [failed_attempt() for _ in range(5)], captcha_variant="tile-scramble")
+        tile_report = run_json(["scripts/evaluate_verification_attempts.py", "--attempts", str(tile_path)])
+        details["tile_scramble"] = {
+            "switch_triggered": tile_report["switch_triggered"],
+            "route": tile_report["recommended_next_route"],
+            "has_platform_candidates": bool(tile_report["platform_candidates"]),
+        }
+
+        special: dict[str, Any] = {}
+        for captcha_type in ["pow-challenge", "waf-challenge", "biometric-liveness"]:
+            path = tmp_dir / f"{captcha_type}.json"
+            write_attempts(path, captcha_type, [failed_attempt() for _ in range(5)])
+            report = run_json(["scripts/evaluate_verification_attempts.py", "--attempts", str(path)])
+            special[captcha_type] = {
+                "switch_triggered": report["switch_triggered"],
+                "decision": report["escalation_decision"],
+                "platform_candidates": report["platform_candidates"],
+            }
+        details["special_types"] = special
+
+    passed = (
+        details["switch"]["switch_triggered"] is True
+        and details["switch"]["route"] == "platform-control"
+        and details["switch"]["decision"] == "recommend-platform-control"
+        and details["switch"]["send_request"] is False
+        and details["below_threshold"]["switch_triggered"] is False
+        and details["blocking"]["switch_triggered"] is False
+        and details["blocking"]["blocking_issue"] == "coordinates"
+        and details["success"]["switch_triggered"] is False
+        and details["success"]["route"] == "optimize-current-route"
+        and details["tile_scramble"]["switch_triggered"] is True
+        and details["tile_scramble"]["has_platform_candidates"] is True
+        and all(item["switch_triggered"] is False for item in details["special_types"].values())
+        and all(item["decision"] == "ordinary-platform-not-recommended" for item in details["special_types"].values())
+        and all(not item["platform_candidates"] for item in details["special_types"].values())
+    )
+    return {"passed": passed, "details": details}
+
+
+def write_success_samples(path: Path, samples: list[dict[str, Any]]) -> None:
+    data = {
+        "authorization_scope": "授权测试目标",
+        "provider": "custom-or-unknown",
+        "success_samples": samples,
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False), encoding="utf-8")
+
+
+def success_sample(captcha_type: str, sample_id: str) -> dict[str, Any]:
+    return {
+        "sample_id": sample_id,
+        "success": True,
+        "captcha_type": captcha_type,
+        "provider": "custom-or-unknown",
+        "evidence": {
+            "success_signal": "UI/callback/response 显示验证成功",
+            "timeline": ["rendered", "user solved", "success observed"],
+        },
+    }
+
+
+def check_success_baseline() -> dict[str, Any]:
+    details: dict[str, Any] = {}
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_dir = Path(tmp)
+
+        sufficient_path = tmp_dir / "success-sufficient.json"
+        write_success_samples(
+            sufficient_path,
+            [
+                success_sample("slider", "s1"),
+                success_sample("slider", "s2"),
+                success_sample("slider", "s3"),
+                success_sample("click-select", "c1"),
+                success_sample("click-select", "c2"),
+            ],
+        )
+        sufficient = run_json(["scripts/evaluate_success_baseline.py", "--samples", str(sufficient_path)])
+        details["sufficient"] = {
+            "status": sufficient["success_baseline_status"],
+            "route": sufficient["recommended_next_route"],
+            "dynamic": sufficient["success_baseline_summary"]["has_dynamic_type_switch"],
+        }
+
+        insufficient_total_path = tmp_dir / "success-insufficient-total.json"
+        write_success_samples(
+            insufficient_total_path,
+            [
+                success_sample("slider", "s1"),
+                success_sample("slider", "s2"),
+                success_sample("slider", "s3"),
+            ],
+        )
+        insufficient_total = run_json(["scripts/evaluate_success_baseline.py", "--samples", str(insufficient_total_path)])
+        details["insufficient_total"] = {
+            "status": insufficient_total["success_baseline_status"],
+            "missing_scopes": [item["scope"] for item in insufficient_total["missing_success_samples"]],
+            "send_request": insufficient_total["send_request"],
+        }
+
+        insufficient_type_path = tmp_dir / "success-insufficient-type.json"
+        write_success_samples(
+            insufficient_type_path,
+            [
+                success_sample("slider", "s1"),
+                success_sample("slider", "s2"),
+                success_sample("slider", "s3"),
+                success_sample("slider", "s4"),
+                success_sample("click-select", "c1"),
+            ],
+        )
+        insufficient_type = run_json(["scripts/evaluate_success_baseline.py", "--samples", str(insufficient_type_path)])
+        details["insufficient_type"] = {
+            "status": insufficient_type["success_baseline_status"],
+            "missing": insufficient_type["missing_success_samples"],
+        }
+
+    passed = (
+        details["sufficient"]["status"] == "sufficient"
+        and details["sufficient"]["route"] == "ready-for-verification-flow"
+        and details["sufficient"]["dynamic"] is True
+        and details["insufficient_total"]["status"] == "insufficient"
+        and "total" in details["insufficient_total"]["missing_scopes"]
+        and details["insufficient_total"]["send_request"] is False
+        and details["insufficient_type"]["status"] == "insufficient"
+        and any(item.get("scope") == "captcha_type" and item.get("captcha_type") == "click-select" for item in details["insufficient_type"]["missing"])
+    )
+    return {"passed": passed, "details": details}
+
+
 def main() -> int:
     coord = run_json(
         [
@@ -249,20 +453,26 @@ def main() -> int:
             "track_width",
         ]
     )
+    success_baseline = check_success_baseline()
     tile_restore = check_tile_restore()
+    attempt_eval = check_attempt_evaluation()
     refs = check_references()
     checks = {
         "coordinate_mapping": coord["element_css"]["x"] == 120 and coord["page_css"]["x"] == 140,
         "motion_track": track["mode"] == "slider" and len(track["points"]) >= 2,
         "solver_template": template["send_request"] is False and "api_key" in template,
         "asset_inspection": assets["ready_for_offline_flow"] is True,
+        "success_baseline": success_baseline["passed"],
         "tile_restore": tile_restore["passed"],
+        "attempt_evaluation": attempt_eval["passed"],
         "references": refs["passed"],
     }
     report = {
         "passed": all(checks.values()),
         "checks": checks,
+        "success_baseline": success_baseline,
         "tile_restore": tile_restore,
+        "attempt_evaluation": attempt_eval,
         "reference_missing": refs["missing"],
     }
     print(json.dumps(report, ensure_ascii=False, indent=2))

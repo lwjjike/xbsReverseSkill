@@ -145,6 +145,20 @@ POSITIVE_TRIGGER_KEYWORDS = [
     "hcaptcha",
     "turnstile",
     "geetest",
+    "5 次失败复盘",
+    "连续 5 次失败",
+    "打码平台对照",
+    "平台对照",
+    "方案切换",
+    "验证失败复盘",
+    "成功样本",
+    "成功基线",
+    "手动成功样本",
+    "多次成功样本",
+    "manual success samples",
+    "success baseline",
+    "platform control",
+    "verification attempt review",
 ]
 
 BOUNDARY_KEYWORDS = [
@@ -225,6 +239,17 @@ POSITIVE_SAMPLES = [
     "hcaptcha rqdata provider detection",
     "turnstile cdata callback 分析",
     "geetest slider lot_number pass_token",
+    "当前滑块方案连续 5 次失败，帮我复盘是否需要切换方案",
+    "验证码验证失败复盘，图像坐标轨迹都没问题但还是失败",
+    "帮我生成打码平台对照方案，只做授权 QA 对照不要默认发送",
+    "同一方案一直失败，什么时候应该切换到平台对照",
+    "真实项目里缺少成功验证日志，需要采集多次用户手动成功样本",
+    "验证码可能动态切题，帮我评估成功样本基线是否足够",
+    "取证时让用户操作 5 次成功样本并记录验证码类型",
+    "manual success samples for captcha verification baseline",
+    "success baseline before verification attempts",
+    "verification attempt review after five failures",
+    "platform control for captcha QA comparison",
     "NetEase 易盾 NECaptcha 是什么产品",
     "阿里云 NoCaptcha 滑块识别",
     "AWS WAF CAPTCHA 九宫格",
@@ -922,9 +947,10 @@ def eval_browser_acquisition_guidance() -> dict[str, Any]:
 
 def eval_verification_flow_guidance() -> dict[str, Any]:
     required: dict[str, list[str]] = {
-        "references/verification-workflow.md": ["进入条件", "动作分级", "真实网页", "再次确认"],
+        "references/verification-workflow.md": ["进入条件", "动作分级", "真实网页", "再次确认", "成功样本基线", "evaluate_success_baseline.py", "5 次失败复盘门槛", "evaluate_verification_attempts.py"],
+        "references/browser-acquisition.md": ["用户手动成功样本", "至少 5 次成功样本", "每个新类型至少补到 2 次成功样本", "evaluate_success_baseline.py"],
         "references/open-source-recipes.md": ["ddddocr", "OpenCV", "Whisper", "真实网页", "切片乱序", "analyze_tile_restore.py"],
-        "references/solver-platform-recipes.md": ["请求模板", "API key"],
+        "references/solver-platform-recipes.md": ["请求模板", "API key", "授权 QA 对照", "不默认发送"],
         "references/motion-and-coordinate.md": ["坐标体系", "滑块轨迹", "真实网页执行前检查"],
         "references/provider-execution-notes.md": ["极验", "Turnstile", "WAF", "活体"],
         "scripts/map_coordinates.py": ["不打开浏览器", "不点击页面", "不提交验证"],
@@ -932,6 +958,8 @@ def eval_verification_flow_guidance() -> dict[str, Any]:
         "scripts/inspect_assets.py": ["不打开网页", "不读取 Cookie/Storage", "不提交验证"],
         "scripts/analyze_tile_restore.py": ["不打开网页", "不控制浏览器", "不提交验证码", "tileOrder"],
         "scripts/solver_request_template.py": ["不读取 API key", "不保存凭据"],
+        "scripts/evaluate_success_baseline.py": ["MIN_TOTAL_SUCCESS_SAMPLES", "MIN_SUCCESS_SAMPLES_PER_TYPE", "success_baseline_status", "send_request"],
+        "scripts/evaluate_verification_attempts.py": ["MIN_FAILURES_FOR_SWITCH", "recommend-platform-control", "send_request", "API key"],
         "scripts/verify_recipe_eval.py": ["验证第二阶段辅助脚本", "references"],
     }
     missing: list[str] = []

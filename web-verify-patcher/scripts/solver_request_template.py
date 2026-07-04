@@ -30,6 +30,7 @@ def template_for(platform: str, captcha_type: str, provider: str) -> dict[str, A
         "notes": [
             "这是请求模板，不会发送网络请求。",
             "只用于自有系统或明确授权 QA。",
+            "脚本不读取 API key，不保存凭据。",
             "不要把 token 注入未授权流程。",
         ],
     }

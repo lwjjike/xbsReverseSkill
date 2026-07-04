@@ -1,17 +1,17 @@
 ---
 name: web-verify-patcher
-description: "网页验证码识别、方案选择与授权验证流程分析技能。当用户询问验证码识别、验证码类型、这是什么验证码、验证码方案、风控验证、WAF challenge、captcha recognition/type，或提到滑块/拼图、点选/文字点选/九宫格、旋转、文字/数字/算术、语音、拖放、轨迹绘制、刮刮卡、图片/图像复原、切片乱序、分块乱序、图片分割、瓦片重排、分割顺序打乱、区域/面积选择、差异点击/找茬、字体识别、空间语义、小游戏、PoW/工作量证明、无感/无痕/风险评分、一键/checkbox、多轮、问答、活体/人脸，或提到极验、易盾、腾讯、阿里云、数美、顶象、百度、京东云、云片、reCAPTCHA、hCaptcha、Turnstile、AWS WAF、DataDome、Arkose/FunCaptcha、Akamai、Imperva、PerimeterX/HUMAN、Kasada、ALTCHA/FriendlyCaptcha 等国内外验证码/风控厂商时使用。用于识别网页验证码/验证产品、输出方案，并在用户确认后编排离线求解、切片乱序图片还原、坐标/轨迹生成、打码平台请求模板和授权验证测试；打开真实网页时按 ruyiPage/Camoufox/CloakBrowser 取证模式。"
+description: "网页验证码识别、方案选择与授权验证流程分析技能。当用户询问验证码识别、验证码类型、这是什么验证码、验证码方案、风控验证、WAF challenge、captcha recognition/type，或提到滑块/拼图、点选/文字点选/九宫格、旋转、文字/数字/算术、语音、拖放、轨迹绘制、刮刮卡、图片/图像复原、切片乱序、分块乱序、图片分割、瓦片重排、分割顺序打乱、区域/面积选择、差异点击/找茬、字体识别、空间语义、小游戏、PoW/工作量证明、无感/无痕/风险评分、一键/checkbox、多轮、问答、活体/人脸，或提到极验、易盾、腾讯、阿里云、数美、顶象、百度、京东云、云片、reCAPTCHA、hCaptcha、Turnstile、AWS WAF、DataDome、Arkose/FunCaptcha、Akamai、Imperva、PerimeterX/HUMAN、Kasada、ALTCHA/FriendlyCaptcha 等国内外验证码/风控厂商时使用。用于识别网页验证码/验证产品、输出方案，并在用户确认后编排离线求解、切片乱序图片还原、用户手动成功样本基线采集、坐标/轨迹生成、打码平台请求模板、失败复盘/方案切换和授权验证测试；打开真实网页时按 ruyiPage/Camoufox/CloakBrowser 取证模式。"
 ---
 
 # Web Verify Patcher（网页验证码识别与验证方案分析）
 
-使用这个技能分析网页验证码或网页验证材料，输出安全、可落地的“识别 + 厂商判断 + 验证分析方案 + 授权验证流程”。第一阶段做类型/厂商识别和方案选择；第二阶段只在用户明确选择方案并确认授权后，编排离线求解、坐标/轨迹生成、平台请求模板或授权验证测试。
+使用这个技能分析网页验证码或网页验证材料，输出安全、可落地的“识别 + 厂商判断 + 验证分析方案 + 授权验证流程”。第一阶段做类型/厂商识别和方案选择；真实网页取证时先建立用户手动成功样本基线；第二阶段只在用户明确选择方案并确认授权后，编排离线求解、坐标/轨迹生成、平台请求模板、失败复盘、方案切换或授权验证测试。
 
 ## 工作流程
 
 1. 优先基于用户已提供的离线证据分析：HTML 片段、脚本 URL、iframe URL、页面可见提示文案、截图元信息、厂商参数名、网络接口名。
 2. 如果必须打开真实网页取证，先读取 `references/browser-acquisition.md`，并按其中的取证模式执行。启动任何浏览器前先让用户确认模式：ruyiPage + RuyiTrace、仅 ruyiPage、Camoufox + camoufox-reverse-mcp、仅 Camoufox、CloakBrowser、用户手动取证或 AI 自行决定。用户未确认前，不要打开页面、截图、抓包、注入 Hook、读取 Cookie/Storage 或启动任何浏览器工具。
-3. 打开网页时不要直接使用普通 Playwright、Puppeteer、系统浏览器或 CDP 路线；已选模式不可用时，暂停并让用户确认安装、提供路径、降级或切换，不要静默 fallback。验证码、登录、MFA 或设备验证出现时暂停，让用户手动完成或改为离线分析。
+3. 打开网页时不要直接使用普通 Playwright、Puppeteer、系统浏览器或 CDP 路线；已选模式不可用时，暂停并让用户确认安装、提供路径、降级或切换，不要静默 fallback。验证码、登录、MFA 或设备验证出现时暂停，让用户手动完成或改为离线分析；授权取证时让用户多次手动完成验证码成功样本，用 `scripts/evaluate_success_baseline.py` 判断成功基线是否足够。
 4. 用现有证据运行离线分类脚本：
    - `python scripts/classify_verify.py --html page.html --url "https://example.test/login" --text "拖动滑块完成拼图" --pretty`
    - `--html`、`--text`、`--screenshot-meta` 既可以传文件路径，也可以直接传字符串。
@@ -27,6 +27,8 @@ description: "网页验证码识别、方案选择与授权验证流程分析技
    - 使用打码平台时读 `references/solver-platform-recipes.md`。
    - 需要坐标换算、滑块/拖放/刮刮卡/轨迹绘制时读 `references/motion-and-coordinate.md`，优先用 `scripts/map_coordinates.py` 和 `scripts/generate_motion_track.py` 生成离线结果。
    - 需要厂商执行注意点时读 `references/provider-execution-notes.md`。
+   - 进入真实网页验证前，先评估用户手动成功样本基线：默认同一授权目标至少 5 次成功样本；若观察到新的验证码类型，该类型至少 2 次成功样本。基线不足时输出强提示，但用户确认后仍可继续离线分析或受控验证。
+   - 同一授权目标、同一验证码类型、同一用户选择方案出现连续失败时，用 `scripts/evaluate_verification_attempts.py` 复盘 attempts JSON；连续 5 次失败且图片/坐标/轨迹/切片还原/补环境/challenge 新鲜度均无明显异常时，主动建议 `recommended_next_route: platform-control`。
    - 真实页面点击、拖动、提交或抓取 Cookie/Storage 前必须再次让用户确认授权目标、执行模式和浏览器取证模式。
 7. 输出报告时必须包含：
    - `captcha_type`
@@ -36,6 +38,8 @@ description: "网页验证码识别、方案选择与授权验证流程分析技
    - 推荐方案：先给开源/本地方案，再给低通过率时的打码平台或人工/厂商备选，最后说明切换条件
    - 关键风险和缺失证据
    - 第二阶段执行时还必须包含：用户选择的方案、执行前检查结果、是否需要真实网页操作、需要用户确认的动作、产物路径或 JSON 结果
+   - 真实网页取证或第二阶段执行前还必须包含：`success_baseline_status`、`success_baseline_summary`、`missing_success_samples`
+   - 第二阶段失败复盘时还必须包含：`attempt_summary`、`diagnosis_status`、`switch_triggered`、`recommended_next_route`、`platform_control_plan`、`requires_user_confirmation`
 
 ## 分类标签
 
@@ -107,8 +111,24 @@ description: "网页验证码识别、方案选择与授权验证流程分析技
   "chosen_solution": "open-source-slider",
   "authorization_scope": "用户确认的自有/授权测试目标",
   "preflight": ["证据足够", "依赖可用", "不需要真实网页操作"],
+  "success_baseline_status": "insufficient",
+  "success_baseline_summary": {
+    "total_success_samples": 0,
+    "min_total_success_samples": 5,
+    "min_success_samples_per_type": 2,
+    "observed_captcha_types": []
+  },
+  "missing_success_samples": [],
   "offline_steps": ["识别缺口偏移", "换算 DOM 坐标", "生成滑块轨迹 JSON"],
   "requires_live_browser": false,
+  "attempt_summary": null,
+  "diagnosis_status": null,
+  "switch_triggered": false,
+  "recommended_next_route": "continue-current-route-with-diagnostics",
+  "platform_control_plan": {
+    "role": "授权 QA 对照，不默认发送请求",
+    "send_request": false
+  },
   "requires_user_confirmation": ["如需在真实页面拖动并提交，必须再次确认"],
   "artifacts": ["offset/coordinates/track JSON"]
 }
