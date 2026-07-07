@@ -73,6 +73,124 @@ python -m pip install cycronet
 
 如果以上任一项冲突，先修正请求链和 fixture，不要把失败直接归因于 JS 补环境。
 
+## Firefox baseline 与 curl_cffi TLS 指纹对齐
+
+当取证浏览器 baseline 是 Firefox（例如 ruyiPage 定制 Firefox、用户手动 Firefox 或其他 Firefox 系取证工具），而最终请求客户端选择 Python `curl_cffi` / Node.js `curl-cffi-node` 时，不得仅凭 `impersonate="firefox147"`、`impersonate="firefox"` 或修改 `User-Agent` 就宣称与取证浏览器一致。Firefox 版本标签只是 curl_cffi 支持的预设 profile 名称，真实是否兼容必须以当前 case 的浏览器 TLS / HTTP2 采样证据为准。
+
+### 硬性流程
+
+1. 先按 `fingerprint-baseline-consistency.md` 固化当前 case 的 Firefox 指纹基线，记录 `baselineId`、取证工具、profile / seed、代理、语言、时区、UA、Header 和浏览器路径摘要。
+2. 使用已确认的取证工具在同一 baseline 下访问 TLS 指纹检测端点，建议至少采样：
+   - `https://tls.peet.ws/api/all`
+   - `https://tls.browserleaks.com/json`
+3. 记录真实 Firefox baseline 的 `ja3`、`ja3_hash`、`ja3n_hash`、`ja4`、cipher suites、extension 顺序、supported groups / curves、signature algorithms、delegated credentials、record size limit、key_share、ALPN、HTTP/2 Akamai fingerprint、UA 和请求头。
+4. 再用 curl_cffi 的候选 profile（例如 `firefox147` 或当前 `firefox` alias）访问同一端点并对比。
+5. 如果裸 profile 与 Firefox baseline 不一致，不允许只改 UA 后继续；必须尝试通过 `ja3`、`akamai`、`extra_fp`、`curl_options` 和 HTTP Header 对齐。
+6. 对齐后再次访问检测端点，只有 `ja3_hash`、`ja3n_hash`、`ja4`、HTTP/2 Akamai fingerprint、关键 TLS 字段和 UA / Header 与 baseline 一致或经过用户确认可接受等价时，才允许进入最终请求验证。
+7. 对齐配置必须写入 `case/notes/final-request-validation.md` 和最终总结；如果仍不一致，必须暂停、换客户端或记录用户明确接受的风险，不得伪造成功。
+
+### 必须对比的字段
+
+- TLS：`ja3`、`ja3_hash`、`ja3n_hash`、`ja4`、TLS version、cipher suites 列表和顺序、TLS extensions 列表和顺序、supported groups / curves、signature algorithms、delegated credentials、record size limit、key_share 数量和顺序、ALPN、ECH / certificate compression 等扩展摘要。
+- HTTP/2：Akamai fingerprint、settings、window update、streams、pseudo-header 顺序。
+- HTTP Header：`User-Agent`、`Accept`、`Accept-Language`、`Accept-Encoding`、`Referer`、`Origin`、`Sec-Fetch-*`、Header 顺序和大小写。
+- Session 与环境：Cookie jar、代理 / IP、timezone、locale、`navigator.userAgent`、`navigator.language/languages`、Firefox 不应伪造 Chrome UA-CH。
+
+### curl_cffi Firefox 对齐模板
+
+以下模板用于“Firefox baseline 已采样，且确认 curl_cffi 裸 profile 不一致”时的对齐。示例中的具体值来自某次 ruyiPage Firefox 151 baseline 验证，只能作为写法参考；真实 case 必须把 `FIREFOX_BASELINE_JA3`、`FIREFOX_BASELINE_AKAMAI`、`headers`、`extra_fp` 和 `curl_options` 替换为当前 case 采样结果。
+
+```python
+from curl_cffi import requests
+from curl_cffi.const import CurlOpt
+
+FIREFOX_BASELINE_JA3 = (
+    "771,4865-4867-4866-49195-49199-52393-52392-49196-49200-"
+    "49171-49172-156-157-47-53,"
+    "0-23-65281-10-11-35-16-5-34-18-51-43-13-45-28-27-65037,"
+    "4588-29-23-24-25-256-257,0"
+)
+
+FIREFOX_BASELINE_AKAMAI = "1:65536;2:0;4:131072;5:16384|12517377|0|m,p,a,s"
+
+FIREFOX_HEADERS = {
+    # 中文说明：UA 必须来自当前 case 的 Firefox baseline，不要沿用 curl_cffi 默认 UA。
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:151.0) Gecko/20100101 Firefox/151.0",
+    # 中文说明：Accept / Accept-Language / Accept-Encoding 等也要以 HAR 或浏览器样本为准。
+}
+
+FIREFOX_EXTRA_FP = {
+    # 中文说明：signature_algorithms 必须按真实 Firefox baseline 的顺序填写。
+    "tls_signature_algorithms": [
+        "ecdsa_secp256r1_sha256",
+        "ecdsa_secp384r1_sha384",
+        "ecdsa_secp521r1_sha512",
+        "rsa_pss_rsae_sha256",
+        "rsa_pss_rsae_sha384",
+        "rsa_pss_rsae_sha512",
+        "rsa_pkcs1_sha256",
+        "rsa_pkcs1_sha384",
+        "rsa_pkcs1_sha512",
+        "rsa_pkcs1_sha1",
+    ],
+    # 中文说明：delegated credentials 使用冒号分隔；不要把逗号分隔误写为最终配置。
+    "tls_delegated_credential": "ecdsa_secp256r1_sha256:ecdsa_secp384r1_sha384:ecdsa_secp521r1_sha512",
+    # 中文说明：record_size_limit 需来自真实浏览器样本，例如 Firefox 151 样本为 0x4001。
+    "tls_record_size_limit": 0x4001,
+}
+
+
+def create_firefox_aligned_curl_cffi_session():
+    # 中文说明：最终项目必须使用 Session；动态资源刷新、Cookie 生成和目标 API 都复用同一 Session。
+    # 中文说明：ja3 / akamai / extra_fp / curl_options 在 Session 初始化时固定，避免单次请求遗漏。
+    session = requests.Session(
+        impersonate="firefox147",
+        ja3=FIREFOX_BASELINE_JA3,
+        akamai=FIREFOX_BASELINE_AKAMAI,
+        extra_fp=FIREFOX_EXTRA_FP,
+        curl_options={
+            # 中文说明：用于对齐 Firefox key_share 数量；实际值必须通过采样验证。
+            CurlOpt.TLS_KEY_SHARES_LIMIT: 2,
+        },
+    )
+    session.headers.update(FIREFOX_HEADERS)
+    return session
+
+
+def send_with_firefox_aligned_tls(session, method, url, **kwargs):
+    headers = dict(FIREFOX_HEADERS)
+    headers.update(kwargs.pop("headers", {}) or {})
+    return session.request(
+        method=method,
+        url=url,
+        headers=headers,
+        **kwargs,
+    )
+```
+
+### 对齐验收示例
+
+对齐成功后，检测端点应至少达到以下级别：
+
+```text
+ja3_hash: 与 Firefox baseline 一致
+ja3n_hash: 与 Firefox baseline 一致
+ja4: 与 Firefox baseline 一致
+akamai_hash / akamai_text: 与 Firefox baseline 一致
+HTTP User-Agent: 与 navigator.userAgent / HAR 一致
+HTTP/2: settings、window update、pseudo-header 顺序一致
+```
+
+若只修改 UA 后 `ja3_hash`、`ja4`、Akamai HTTP/2 指纹仍不一致，视为未对齐，不得进入最终请求验证。
+
+### cyCronet / cycronet 的边界
+
+`cyCronet` / `cycronet` 更适合 Chromium / Chrome baseline。即使当前版本提供 `add_tls_profile` / `set_tls_profiles`，通常也主要控制 cipher suites、curves 和部分 extensions，底层仍是 Cronet / Chromium 网络栈，HTTP/2 Akamai 指纹、JA4 结构和 Firefox 的 BoringSSL / NSS 行为可能不同。
+
+- 取证 baseline 是 Firefox：优先使用 curl_cffi 的 Firefox 对齐流程；不要把 cyCronet 作为 Firefox 对齐首选。
+- 取证 baseline 是 Chrome / Chromium / Camoufox Chromium 类工具：可以考虑 cyCronet，并同样先采样 baseline、再对比 JA3 / JA4 / HTTP2 指纹。
+- 如果用户明确要求用 cyCronet 对齐 Firefox，必须先实测；若 JA4 或 HTTP/2 指纹无法一致，暂停并说明能力边界。
+
 ## Session 模式硬规则
 
 最终请求不再区分单请求或请求链。只要用户选择发送真实请求或交付可请求的 `final.js` / `final.py`，必须读取 `session-request-chain.md` 并满足：
@@ -137,6 +255,8 @@ export async function sendRequestWithImpers({ url, method = 'GET', headers = {},
 
 ## Python curl_cffi 模板
 
+普通 Chrome / Safari / 已有预设 profile 可使用下列基础模板；如果取证 baseline 是 Firefox 且 curl_cffi 预设 profile 与真实浏览器 TLS / HTTP2 指纹不一致，必须优先按上文“Firefox baseline 与 curl_cffi TLS 指纹对齐”生成专用 Session 封装，不得只使用基础模板或只改 UA。
+
 ```python
 from curl_cffi import requests
 
@@ -168,7 +288,7 @@ def close_curl_cffi_session(session):
 
 ## Python cffi_curl / cyCronet 模板
 
-`cffi_curl` 与 `cyCronet` / `cycronet` 的 API 版本差异较大，Skill 不应硬编码某个本机版本。使用方式：
+`cffi_curl` 与 `cyCronet` / `cycronet` 的 API 版本差异较大，Skill 不应硬编码某个本机版本。`cyCronet` / `cycronet` 默认优先用于 Chrome / Chromium baseline；Firefox baseline 应优先走 curl_cffi 对齐流程，除非已实测 cyCronet 的 JA3 / JA4 / HTTP2 与 Firefox baseline 一致。使用方式：
 
 1. 先运行 `check_tls_clients.js --python python --json` 确认导入名。
 2. 在 `result/src/request_client.py` 封装一个统一函数 `send_request(...)`。
@@ -216,6 +336,9 @@ def send_request(url, method="GET", headers=None, body=None):
 - 是否包含浏览器自动化代码：否
 - 请求来源：cURL / HAR / 用户样本
 - TLS 指纹兼容原因：用户前置选择 / 目标接口要求浏览器网络栈一致 / 未启用
+- Firefox / curl_cffi 对齐状态：不涉及 / 已对齐 / 未对齐改选 / 用户确认风险
+- TLS baseline 来源：ruyiPage / Camoufox / CloakBrowser / 用户手动浏览器 / HAR；baselineId：
+- 对齐参数摘要：ja3 hash / ja4 / akamai hash / extra_fp / curl_options / Header 是否与 baseline 一致
 - 请求次数：
 - 状态码：
 - 目标加密参数是否被接受：

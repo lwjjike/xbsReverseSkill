@@ -42,28 +42,72 @@
            └── normalize.js
    ```
 
-3. **补环境代码必须可读**  
+   如果需要 Node 诊断执行器、runtime probe 或 Akamai / Shape / F5 等高强度检测的本地执行器，应继续拆成下列职责，而不是把所有 WebAPI 放进 `src/signer/*probe*.js`：
+
+   ```text
+   case/result/src/
+   ├── signer/
+   │   ├── runtime_signer.py
+   │   └── akamai_runtime_probe.js      # 只做入口和编排，建议少于 150 行
+   └── node-runtime/
+       ├── bootstrap/
+       │   ├── read-stdin.js
+       │   ├── execute-script.js
+       │   └── result-recorder.js
+       ├── utils/
+       │   ├── hash.js
+       │   ├── sanitize-url.js
+       │   └── body-summary.js
+       └── env/
+           ├── install-env.js
+           ├── native-api.js
+           ├── node-leakage.js
+           ├── browser-objects/
+           │   ├── window.js
+           │   ├── navigator.js
+           │   ├── document.js
+           │   ├── location.js
+           │   ├── history.js
+           │   ├── screen.js
+           │   ├── storage.js
+           │   ├── performance.js
+           │   └── events.js
+           ├── fingerprint/
+           │   ├── canvas.js
+           │   ├── webgl.js
+           │   ├── audio.js
+           │   └── dom-geometry.js
+           └── network/
+               ├── xhr.js
+               ├── fetch.js
+               └── beacon.js
+   ```
+
+3. **signer / probe 不得承载补环境主体**  
+   `src/signer/`、`src/request/`、`src/resources/`、`runtime_probe.js`、`probe.js`、`runner.js`、`diagnostic.js` 等文件只允许做编排、进程入口、请求封装、资源刷新或安全摘要输出；只要文件内实现了 `navigator`、`document`、`window`、`screen`、`Storage`、`XMLHttpRequest`、`fetch`、`Canvas`、`WebGL`、`Audio`、`performance`、DOM 构造链、事件系统等浏览器 WebAPI 主体，就必须拆入 `src/env/` 或 `src/node-runtime/env/` 下的真实模块。不得因为文件名叫 probe、runtime、signer 或 diagnostic 就豁免模块化要求。
+
+4. **补环境代码必须可读**  
    禁止压缩代码、单行堆叠多个语句、过度匿名函数、无意义变量名、超长函数和超深嵌套。原始目标 bundle 如必须保留，应放到 `src/target/original/` 或等价目录，并与手写补环境代码分离。
 
-4. **中文注释必须正常显示**  
+5. **中文注释必须正常显示**  
    所有交付源码使用 UTF-8 无 BOM。不要使用未指定编码的 PowerShell / cmd 重定向写中文源码。中文注释中不得出现问号、连续问号或替换字符。
 
-5. **WebAPI 实现必须可审计**  
+6. **WebAPI 实现必须可审计**  
    补环境源码不得把 WebAPI 写成无法审查的一行堆叠代码。禁止一行连续堆多个 `Object.defineProperty`、`Object.defineProperties`、`Object.assign`、函数定义或对象字面量方法。`install-env.js` 只负责装配，不应成为巨型文件；`navigator`、`screen`、`document`、`storage`、`indexedDB`、`canvas`、`webgl`、`events`、`worker`、`request` 等应按职责拆模块。
 
-6. **普通 WebAPI 函数必须 addon-first**  
+7. **普通 WebAPI 函数必须 addon-first**  
    不要在 WebAPI 主路径中直接写 `ctx.Blob = function(){}`、`ctx.indexedDB = { open() {} }`、`prototype = { getContext() {} }` 或 `ctx.URL.createObjectURL = function(){}`。普通函数也要提取为具名函数，并通过 addon-first helper 包装后再安装 descriptor。addon 不可用时才用 `NativeProtect` / JS fallback，并在注释与阶段报告中说明原因。
 
-7. **构造函数错误必须可追溯**  
+8. **构造函数错误必须可追溯**  
    构造函数的报错类型和 message 必须来自目标浏览器采样。不要写泛化 `throw new TypeError('Illegal constructor')`；需要在注释、fixture 或阶段报告中说明该错误来自哪个浏览器、哪个调用方式。
 
-8. **addon 实例不再二次标记对象类型**  
+9. **addon 实例不再二次标记对象类型**  
    `markObjectType` 不是批准 API。addon 构造函数 / `createProtoChains` 实例工厂创建出的实例本身应已处理 `Object.prototype.toString`；只有 JS fallback 普通对象才允许 `markObjectToString` / `Symbol.toStringTag`，并必须写明 fallback 原因。
 
-9. **注释说明“为什么”和“来源”**  
+10. **注释说明“为什么”和“来源”**  
    注释不是逐行翻译代码，而是说明模块职责、浏览器样本来源、RuyiTrace 证据、fixture 匹配规则、addon-first 决策和 fallback 原因。
 
-10. **isolated-vm 也必须文件化模块交付**  
+11. **isolated-vm 也必须文件化模块交付**  
    isolated-vm 底层确实需要把源码字符串交给 V8，但最终项目不得把补环境源码写成大段 `String.raw`、`CORE_SCRIPT`、`BROWSER_OBJECTS_SCRIPT`、`*_SCRIPT` 聚合字符串。正确做法是把 `navigator.js`、`document.js`、`window.js`、`canvas.js`、`webgl.js` 等作为真实源码文件保存，由宿主侧 runtime 使用 `fs.readFileSync` 读取，再通过 `compileScriptSync(source, { filename })` 或等价方法注入同一个 isolated-vm Context。只有少量 bootstrap 片段允许字符串形式，且必须少于 40 行、不能承载主要 WebAPI 实现，并写明原因。
 
 ## 中文注释要求
@@ -150,7 +194,7 @@ node scripts/check_env_realism.js --case-dir case --markdown
 node scripts/check_final_artifact.js --case-dir case --markdown
 ```
 
-如果 `check_code_quality.js` 或 `check_webapi_addon_coverage.js` 失败，先重构代码、修复中文注释、编码问题、普通 WebAPI 函数、普通对象和宿主透传，再继续补环境验证或交付。
+如果 `check_code_quality.js` 或 `check_webapi_addon_coverage.js` 失败，必须立即停止后续补环境验证、真实请求验证和交付；先重构代码、拆分 signer/probe 中的 WebAPI 主体、修复中文注释、编码问题、普通 WebAPI 函数、普通对象和宿主透传，再重新运行检查。不得以“当前请求能跑通”“只是诊断脚本”“只是 probe”为理由跳过失败项。
 
 ## 常见修复方式
 

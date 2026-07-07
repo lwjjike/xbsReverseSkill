@@ -235,6 +235,70 @@ function inspectEmbeddedScriptStrings(relFile, text) {
   return { problems, warnings };
 }
 
+const WEBAPI_DOMAIN_PATTERNS = [
+  ['window/global', /\b(?:window|globalThis|self|top|parent|frames|innerWidth|outerWidth|devicePixelRatio)\b/],
+  ['navigator', /\b(?:navigator|Navigator|PluginArray|MimeTypeArray|permissions|sendBeacon|hardwareConcurrency|webdriver|mimeTypes|plugins)\b/],
+  ['document/dom', /\b(?:document|Document|HTMLDocument|Element|HTMLElement|createElement|createTextNode|currentScript|DOMRect|MutationObserver|HTMLCollection|NodeList)\b/],
+  ['location/history', /\b(?:location|Location|history|History|pushState|replaceState)\b/],
+  ['screen', /\b(?:screen|Screen|availWidth|availHeight|colorDepth|pixelDepth)\b/],
+  ['storage/cookie', /\b(?:localStorage|sessionStorage|Storage|cookie|Cookie|document\.cookie)\b/],
+  ['network', /\b(?:XMLHttpRequest|fetch|Request|Response|Headers|sendBeacon|open\s*\(|setRequestHeader|readyState)\b/],
+  ['canvas', /\b(?:HTMLCanvasElement|CanvasRenderingContext2D|toDataURL|getImageData|measureText|canvas)\b/],
+  ['webgl', /\b(?:WebGLRenderingContext|WebGL2RenderingContext|WebGLShaderPrecisionFormat|getParameter|readPixels|getSupportedExtensions|webgl)\b/],
+  ['audio', /\b(?:AudioContext|OfflineAudioContext|AudioBuffer|HTMLAudioElement|getChannelData|startRendering|audio)\b/],
+  ['performance/timing', /\b(?:performance|Performance|PerformanceNavigationTiming|timeOrigin|navigationStart|requestAnimationFrame)\b/],
+  ['events', /\b(?:EventTarget|Event|MouseEvent|KeyboardEvent|CustomEvent|addEventListener|dispatchEvent|isTrusted)\b/],
+  ['worker/wasm/message', /\b(?:Worker|postMessage|MessageChannel|MessagePort|WebAssembly|BroadcastChannel)\b/],
+];
+
+function detectWebApiDomains(text) {
+  const found = [];
+  for (const [name, pattern] of WEBAPI_DOMAIN_PATTERNS) {
+    if (pattern.test(text)) found.push(name);
+  }
+  return found;
+}
+
+function isEnvModulePath(relFile) {
+  return /(^|\/)src\/(?:env|node-runtime\/env)\//i.test(relFile) || /(^|\/)env\//i.test(relFile);
+}
+
+function inspectWebApiModuleBoundary(relFile, text, lines, args) {
+  const problems = [];
+  const warnings = [];
+  const normalized = relFile.replace(/\\/g, '/');
+  if (!/\.(?:js|mjs|cjs)$/i.test(normalized)) return { problems, warnings };
+
+  const domains = detectWebApiDomains(text);
+  if (!domains.length) return { problems, warnings };
+
+  const envModule = isEnvModulePath(normalized);
+  const orchestrationDir = /(^|\/)src\/(?:signer|request|resources)\//i.test(normalized);
+  const signerFile = /(^|\/)src\/signer\//i.test(normalized);
+  const probeLikeFile = /(^|\/)[^/]*(?:probe|diagnostic|runtime-runner|runtime_probe|runtime-probe)[^/]*\.(?:js|mjs|cjs)$/i.test(normalized);
+  const codeLines = codeLineCount(normalized, lines);
+  const implementationLike = /\b(?:installBrowserEnv|install[A-Z][\w$]*Env|create[A-Z][\w$]*(?:Environment|Constructors?|Env)|createNativeHelpers|defineValue\s*\(|defineGetter\s*\(|defineAccessor\s*\(|Object\.defineProperty|Object\.defineProperties|nativeApi\.fn|nativeApi\.getter|HTMLCanvasElement|WebGLRenderingContext|XMLHttpRequest)\b/.test(text);
+  const domainText = domains.join('、');
+
+  if (signerFile && domains.length >= 3 && implementationLike) {
+    problems.push(`src/signer 文件承载了 ${domains.length} 类 WebAPI 补环境主体（${domainText}）。signer 只允许做入口编排、调用目标 signer 和整理输出；请把 WebAPI 安装逻辑拆到 src/env/ 或 src/node-runtime/env/ 下的真实模块。`);
+  }
+
+  if (probeLikeFile && !envModule && domains.length >= 4 && codeLines > 180 && implementationLike) {
+    problems.push(`probe / runtime 入口文件承载了 ${domains.length} 类 WebAPI 补环境主体（${domainText}）。probe 只能是薄入口，建议少于 150 行；请拆分为 browser-objects、fingerprint、network、bootstrap 等模块。`);
+  }
+
+  if (!envModule && domains.length >= 5 && codeLines > args.maxFileLines && implementationLike) {
+    problems.push(`单个非 env 文件同时实现 ${domains.length} 类 WebAPI 且超过 ${args.maxFileLines} 行（${domainText}），属于补环境主体堆叠。请先规划目录并拆分模块后再继续验证。`);
+  }
+
+  if (orchestrationDir && domains.length >= 2 && codeLines > 240 && implementationLike && !signerFile) {
+    warnings.push(`编排目录文件包含多类 WebAPI 实现迹象（${domainText}）。请确认它只做请求、资源或摘要编排；WebAPI 主体必须放入 src/env/ 或 src/node-runtime/env/。`);
+  }
+
+  return { problems, warnings };
+}
+
 function inspectProjectStructure(root, files) {
   const problems = [];
   const warnings = [];
@@ -278,6 +342,9 @@ function inspectFile(root, file, args) {
   const embeddedScriptCheck = inspectEmbeddedScriptStrings(relFile, text);
   problems.push(...embeddedScriptCheck.problems);
   warnings.push(...embeddedScriptCheck.warnings);
+  const webApiBoundaryCheck = inspectWebApiModuleBoundary(relFile, text, lines, args);
+  problems.push(...webApiBoundaryCheck.problems);
+  warnings.push(...webApiBoundaryCheck.warnings);
 
   if (hasBom) problems.push('文件带 UTF-8 BOM，建议使用无 BOM UTF-8。');
   if (/\uFFFD/.test(text)) problems.push('文件包含替换字符，疑似 UTF-8 解码或写入异常。');
@@ -410,6 +477,7 @@ function renderMarkdown(result) {
     `- 单函数行数上限：${result.limits.maxFunctionLines}`,
     '- 必须有中文职责注释，中文注释不得包含问号、连续问号或乱码。',
     '- 禁止压缩代码、过度堆叠语句、调试断点和临时测试标记。',
+    '- signer / probe / runtime 入口不得承载 navigator、document、canvas、webgl、performance 等多域 WebAPI 补环境主体。',
     '- isolated-vm 补环境不得以大段 String.raw / *_SCRIPT 字符串作为主要交付形态，必须拆成真实文件模块并通过 runFile/runFiles 注入。',
     '',
   ];
@@ -444,4 +512,4 @@ try {
   process.exit(1);
 }
 
-module.exports = { check, inspectFile, extractComments, inspectEmbeddedScriptStrings, inspectProjectStructure };
+module.exports = { check, inspectFile, extractComments, inspectEmbeddedScriptStrings, inspectWebApiModuleBoundary, inspectProjectStructure };

@@ -2230,3 +2230,22 @@ node scripts/check_fingerprint_fixture.js --case-dir case --require canvas,webgl
 - 使用 `generate_fingerprint_hook.js` 生成的采样 Hook 时，复制结果前必须执行 `await window.__WEB_JS_ENV_PATCHER_FINALIZE_FINGERPRINT__()`；Hook 不得包含 `clip(result, 4096)`、`slice(0, 4096)` 等裁剪逻辑。
 - 完整长值直接保存或分片保存均可；分片保存必须记录 `encoding: "string-chunks"` 或 `encoding: "base64-chunks"`、`valueLength`、`chunkSize`、`chunks`、`sha256`、`truncated: false` 和真实来源。
 - 数值型返回值本身等于 4096 不一定是截断；本规则针对日志中的长字符串、长数组、base64、序列化对象和二进制编码结果。
+
+
+## 测试 130：signer / probe 不得承载补环境主体
+
+输入场景：最终项目中出现 `src/signer/akamai_runtime_probe.js`、`runtime_probe.js`、`probe.js`、`diagnostic.js` 或类似文件，并且该文件同时实现 `navigator`、`document`、`canvas`、`webgl`、`performance`、`XMLHttpRequest`、`fetch`、Storage、Cookie、DOM 构造链等多类 WebAPI。
+
+执行：
+
+```bash
+node scripts/check_code_quality.js --case-dir case --markdown
+node scripts/check_code_quality.js --dir case/result --json
+```
+
+期望：
+
+- `check_code_quality.js` 必须识别 signer / probe / runtime 入口文件承载多域 WebAPI 补环境主体，并返回失败。
+- 不能因为文件名包含 `probe`、`runtime`、`signer`、`diagnostic`、或当前脚本只是“诊断执行器”就豁免模块化要求。
+- 修复方向必须是：probe / signer 只保留入口编排和结果摘要；WebAPI 主体拆入 `src/env/` 或 `src/node-runtime/env/`，例如 `browser-objects/navigator.js`、`browser-objects/document.js`、`fingerprint/canvas.js`、`fingerprint/webgl.js`、`network/xhr.js`、`network/fetch.js`。
+- 质量检查失败时不得继续最终请求验证或交付；必须先重构、补充 UTF-8 中文注释、复跑 `check_code_quality.js` 与 `check_webapi_addon_coverage.js` 通过后再继续。
