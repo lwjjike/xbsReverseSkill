@@ -8,7 +8,7 @@
 - 阶段报告统一写入 `case/阶段报告/`，最终总结统一写入 `case/result/最终项目总结.md`。
 - Markdown 内容必须 UTF-8 写入；不要使用未指定编码的 shell 重定向写中文。
 - 每个合适推进节点结束后立即写入或更新对应阶段报告，不要等项目完成后一次性补写；“合适推进节点”由执行者根据实际任务判断，不局限于固定流程阶段。
-- 阶段报告既要写阶段结论、用户确认信息、证据摘要和下一步计划，也要写本阶段新增 / 修改的 WebAPI、补环境功能、指纹能力、Bug 修复、测试结果和清理状态；不要写入明文 Cookie、Authorization、账号、手机号、完整 token、完整 localStorage 等敏感内容。
+- 阶段报告既要写阶段结论、用户确认信息、证据摘要和下一步计划，也要写 Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、补环境功能、指纹能力、Bug 修复、测试结果和清理状态；不要写入明文 Cookie、Authorization、账号、手机号、完整 token、完整 localStorage 等敏感内容。
 - 阶段报告可以记录临时证据路径，但必须标注“临时证据 / 已清理 / 需用户确认保留”，不要把临时 hook、trace、HAR、截图、Profile 当成最终交付物。
 - 如果用户明确要求不生成阶段报告，必须在对话和最终总结中记录该豁免；否则默认生成。
 
@@ -32,7 +32,7 @@
 除了固定阶段外，执行者应在以下节点主动生成阶段报告：
 
 - 完成一轮明确修改后，例如更新 Skill 流程、脚本、参考文档、addon helper、env 模块、signer 或 request 客户端。
-- 新增、迁移或重构一批 WebAPI 后，例如新增 `Navigator`、`Document`、`Location`、`Storage`、`Canvas`、`WebGL` 等对象或方法。
+- 新增、迁移或重构一批 WebAPI 后，例如新增 `Navigator`、`Document`、`Location`、`Storage`、`Canvas`、`WebGL` 等对象或方法；报告必须说明这些 WebAPI 是 Trace 覆盖矩阵中的计划内首轮实现 / 调整，还是 Trace 未覆盖、动态资源新分支、baseline 不一致、Trace 截断、native 能力缺口或前置矩阵遗漏导致的计划外新增。
 - 新增或调整指纹能力后，例如 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何的真实值采样与回放，并记录是否绑定同一 `baselineId`。
 - 固化或变更 fingerprint baseline 后，例如创建 `case/notes/fingerprint-baseline.json`、发现 baseline diff、切换代理 / profile / 工具。
 - 建立或调整最终请求 Session 请求链后，例如改为同一 session 刷新动态资源、生成 Cookie / challenge、发送目标 API 并销毁 session。
@@ -171,11 +171,19 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 |---|---|---|---|
 | result/src/env/navigator.js | 新增 / 修改 / 删除 |  |  |
 
-## 4. 本阶段新增 / 修改的 WebAPI
+## 4. Trace 计划内首轮实现 / 调整的 WebAPI
 
-| WebAPI | 挂载位置 | 类型 | 实现方式 | 是否 addon-first | 证据来源 | 测试结果 |
-|---|---|---|---|---|---|---|
-| navigator.userAgent | Navigator.prototype | getter | createGetter | 是 | RuyiTrace / 浏览器样本 | 通过 |
+| WebAPI | 挂载位置 | 类型 | 实现方式 | 是否 addon-first | Trace 矩阵状态 | 证据来源 | 测试结果 |
+|---|---|---|---|---|---|---|---|
+| navigator.userAgent | Navigator.prototype | getter | createGetter | 是 | implemented-first-pass | RuyiTrace / 浏览器样本 | 通过 |
+
+## 4a. 计划外新增 WebAPI 与原因
+
+计划外新增只能使用以下原因：`trace-not-covered` / `dynamic-resource-new-branch` / `baseline-mismatch` / `trace-truncated` / `native-gap` / `missed-from-trace`。如果原因是 `missed-from-trace`，必须标为流程缺陷，并补写 `trace-api-inventory.json`、`env-coverage-matrix.md` 和 `notes/代码变更记忆.md` 后再继续。
+
+| WebAPI | 新增原因 | 为什么未在 Trace 覆盖矩阵首轮处理 | 证据 | 处理结果 |
+|---|---|---|---|---|
+| 无 | - | - | - | - |
 
 ## 5. 本阶段新增功能
 
@@ -243,6 +251,6 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 ## 最终总结与阶段报告关系
 
 - 阶段报告记录“当时的状态”和“阶段性结论”，允许出现待确认项。
-- 动态阶段报告还要记录“本阶段能力增量”，包括新增 WebAPI、功能、指纹、Bug 修复、真实性保护和测试结果。
+- 动态阶段报告还要记录“本阶段能力增量”，包括 Trace 计划内 WebAPI 实现 / 调整、计划外新增 WebAPI 与原因、功能、指纹、Bug 修复、真实性保护和测试结果。
 - `result/最终项目总结.md` 记录最终结论，必须引用阶段报告中的关键决策，但不要重复粘贴所有中间日志。
 - 最终交付检查时，应确认 `case/阶段报告/` 中至少存在 `01-需求信息确认.md`，并确认文件名和内容均为 UTF-8 中文正常显示。

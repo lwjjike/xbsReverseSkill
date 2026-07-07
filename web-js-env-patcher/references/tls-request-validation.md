@@ -61,6 +61,22 @@ python -m pip install cycronet
 
 ## 高强度网络指纹一致性
 
+## 用户 cURL 与取证 baseline 的网络指纹优先级
+
+用户提供的 cURL / HAR 不一定来自最终取证浏览器。最终请求代码必须优先对齐“已确认取证 baseline”，而不是无条件复用用户 cURL 中的 UA、Client Hints、Header、Cookie 或 TLS 线索。
+
+硬性规则：
+
+- 前置阶段必须识别用户 cURL 样本浏览器族和取证 baseline 浏览器族。
+- 如果两者一致，仍需确认 Header、TLS / HTTP2、Cookie jar 和代理 / 地区是否属于同一会话链路。
+- 如果两者不一致，默认以取证 baseline 为准；cURL 只作为请求结构、参数位置、业务字段和历史现象线索。
+- Chrome cURL 与 Firefox 取证冲突时，不得在 Firefox baseline 的最终请求中保留 Chrome `sec-ch-ua`、`sec-ch-ua-platform`、`sec-ch-ua-mobile`，也不得只修改 UA 后继续使用 Chrome TLS / HTTP2 profile。
+- 最终 `final.js` / `final.py` 的 UA、Accept-Language、Client Hints、Header 顺序、TLS / JA3 / JA4、HTTP/2 Akamai 指纹、Cookie jar 和代理必须来自同一取证 baseline 或经过重新取证确认。
+- cURL 中已有的 sign、token、Cookie challenge 值只能作为 fixture / 历史线索；最终项目必须通过补环境后的 signer 和同一 session 请求链生成或刷新。
+- 冲突记录必须写入 `case/notes/sample-baseline-conflict.md`、`case/notes/final-request-validation.md` 和最终总结。
+- 如果用户坚持沿用 cURL 浏览器族，则暂停最终请求验证，要求使用同浏览器族取证工具重新采样 baseline，或让用户明确接受风险；风险确认不得替代成功验证。
+
+
 高强度检测中，TLS 指纹兼容不是单独开关，而是要与浏览器取证 baseline 一起看。最终请求前必须核对：
 
 - TLS / JA3 / JA4、ALPN、HTTP/2 / HTTP/3 能力与所选 impersonate 浏览器族一致。
@@ -338,6 +354,8 @@ def send_request(url, method="GET", headers=None, body=None):
 - TLS 指纹兼容原因：用户前置选择 / 目标接口要求浏览器网络栈一致 / 未启用
 - Firefox / curl_cffi 对齐状态：不涉及 / 已对齐 / 未对齐改选 / 用户确认风险
 - TLS baseline 来源：ruyiPage / Camoufox / CloakBrowser / 用户手动浏览器 / HAR；baselineId：
+- 用户 cURL 浏览器族与取证 baseline 浏览器族：一致 / 冲突 / 未知；冲突处理：以取证 baseline 为准 / 重新取证 / 切换工具 / 用户确认风险
+- 是否阻止沿用冲突 cURL 字段：UA / Client Hints / Header / TLS profile / HTTP2 指纹 / Cookie / 动态参数
 - 对齐参数摘要：ja3 hash / ja4 / akamai hash / extra_fp / curl_options / Header 是否与 baseline 一致
 - 请求次数：
 - 状态码：

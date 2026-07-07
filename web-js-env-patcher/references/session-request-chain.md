@@ -4,6 +4,17 @@
 
 ## 硬性规则
 
+## cURL 样本与取证 baseline 冲突时的 Session 基线
+
+最终 Session 必须绑定同一套取证 baseline。用户提供的 cURL / HAR 如果与实际取证浏览器族或指纹基线冲突，只能用于请求结构和参数线索，不能作为 Session 的 UA、Client Hints、TLS / HTTP2、Cookie jar 或动态参数来源。
+
+- 创建 Session 前先确认用户 cURL 浏览器族与取证 baseline 浏览器族是否一致。
+- 不一致时默认以取证 baseline 创建 Session：Header、UA、Client Hints、Accept-Language、代理、TLS 指纹、HTTP/2 指纹、Cookie jar 和前置请求链均从取证样本或同 baseline 重新采样获得。
+- Chrome cURL + Firefox 取证时，Session 中不得保留 Chrome `sec-ch-ua`，不得使用 Chrome TLS / HTTP2 profile；应使用 Firefox 取证 HAR / Network 样本和 Firefox TLS 对齐配置。
+- cURL 中已有的 Cookie / token / sign / challenge 参数不能直接固定为 Session 初始状态；需要区分登录态、非登录生成型 Cookie 和一次性 challenge，按生成 / 刷新链路纳入同一 Session。
+- 如果用户要求以 cURL 作为最终 Session 基线，必须重新使用同浏览器族工具取证，或记录用户确认风险并阻塞成功结论，不能混用两套 baseline 后宣称验证通过。
+
+
 - 最终请求一律使用 Session 模式；即使当前看起来只有一个目标 API，也必须创建 session client。
 - 前置请求、动态 HTML / JS / challenge 刷新、Cookie / token / 设备参数生成链路、加密参数生成前后的请求、目标 API 请求必须复用同一 session。
 - 同一 session 内保持一致的 Cookie jar、UA、Client Hints、Accept-Language、Referer、Origin、Header 顺序、代理 / IP、TLS 指纹客户端和指纹基线。
@@ -104,5 +115,6 @@ def close_request_session(session):
 - 请求链：动态资源刷新、Cookie / challenge 生成、目标 API 请求是否在同一 session。
 - Cookie jar 来源、更新点和是否已脱敏。
 - 是否复用同一 UA / Client Hints / locale / timezone / proxy / 指纹基线。
+- 用户 cURL 样本与取证 baseline 是否冲突，Session 是否已按取证 baseline 重建 Header / UA / Client Hints / TLS / HTTP2 / Cookie jar。
 - session 销毁方式：`close()` / `exit()` / `dispose()` / Cookie jar 清理。
 - 成功或失败后是否存在敏感状态残留。

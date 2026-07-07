@@ -66,6 +66,29 @@
 
 ## 冲突处理
 
+## 用户 cURL 样本与取证 baseline 冲突处理
+
+用户提供的 cURL / HAR 可能来自 Chrome / Chromium，但实际取证可能使用 ruyiPage 定制 Firefox、用户手动 Firefox、Camoufox 或 CloakBrowser。两者浏览器族、UA、Client Hints、TLS / HTTP2 指纹、Header 顺序和 Cookie 会话来源不一致时，不能把它们拼接成同一个最终 baseline。
+
+硬性规则：
+
+- 解析 cURL / HAR 时先识别“用户样本浏览器族”：Chrome / Chromium / Firefox / Safari / Unknown，并记录识别依据，例如 `User-Agent`、`sec-ch-ua`、`sec-ch-ua-platform`、HAR 浏览器信息、TLS / HTTP2 线索。
+- 第一次成功取证并生成 `case/notes/fingerprint-baseline.json` 后，识别“取证 baseline 浏览器族”，并与用户 cURL 样本浏览器族对比。
+- 如果用户 cURL 是 Chrome / Chromium，而取证 baseline 是 Firefox，默认以取证 baseline 为最终基线；Firefox baseline 下不得沿用 Chrome 的 `sec-ch-ua`、Chrome UA、Chrome TLS profile 或 Chrome HTTP/2 行为。
+- cURL 在冲突场景中只作为请求结构线索：目标 URL、方法、Query / Header / Body / Cookie 字段名、参数位置、可疑加密参数、业务字段和历史响应现象；不得把 cURL 中已有的动态加密参数值、冲突 Cookie、冲突 Header 或冲突网络指纹固定到最终产物。
+- 最终补环境值、指纹 fixture、Header、TLS / HTTP2、Cookie / Storage 链路和 Session 请求链必须以当前已确认取证 baseline 为准。
+- 发现冲突时写入 `case/notes/sample-baseline-conflict.md`，内容至少包括：用户 cURL 浏览器族、取证 baseline 浏览器族、冲突字段、证据来源、默认处理策略、用户是否要求重新取证或接受风险。
+- 如果用户坚持以 cURL 的浏览器族为准，必须暂停并建议改用同浏览器族取证工具重新取证，或让用户提供同浏览器族、同 profile、同代理、同登录态的 HAR / cURL；不得自动混用。
+
+示例：
+
+```text
+用户 cURL：Chrome/137 + sec-ch-ua + Chrome 风格请求头
+实际取证：ruyiPage Firefox 151 baseline
+处理结果：目标 API、参数位置、Cookie 字段名和可疑加密参数可参考 cURL；最终 navigator.userAgent、Header、Client Hints、TLS / HTTP2、Cookie 链路和指纹 fixture 均以 Firefox 取证样本为准，并删除 / 不使用 Chrome UA-CH。
+```
+
+
 发现冲突时优先处理顺序：
 
 1. 判断是否更换了代理、地区、profile 或浏览器工具。
@@ -82,4 +105,5 @@
 - 取证工具、profile / seed / 配置来源。
 - UA / Client Hints / locale / timezone / viewport / screen / WebGL / Canvas / Audio / 字体 / DOM 几何是否一致。
 - 是否发生 baseline diff，冲突字段与处理方式。
+- 用户 cURL 样本浏览器族、取证 baseline 浏览器族、是否发生样本基线冲突，以及 `case/notes/sample-baseline-conflict.md` 的处理结论。
 - `fingerprint.fixture.json` 是否绑定同一 `baselineId`。
