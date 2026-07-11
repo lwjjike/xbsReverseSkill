@@ -1407,7 +1407,7 @@ node scripts/write_stage_report.js --case-dir case --stage WebAPI补齐阶段报
 
 - 生成 `case/阶段报告/08-WebAPI补齐阶段报告.md`。
 - 文件名包含中文并按 UTF-8 写入。
-- 报告包含当前阶段目标、当前项目进展、本阶段修改文件、本阶段新增 / 修改的 WebAPI、本阶段新增功能、本阶段修复的 Bug、本阶段新增 / 修改的指纹能力、真实性保护变化、本阶段测试内容与结果、清理情况、风险与遗留问题、下一步计划。
+- 报告包含当前阶段目标、当前项目进展、本阶段修改文件、Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、Trace-runtime 可执行闭环、XHR/fetch Session Bridge、XHR/fetch 请求语义审计、WebAPI 环境检测矩阵、对象形状审计矩阵、本阶段新增功能、本阶段修复的 Bug、本阶段新增 / 修改的指纹能力、真实性保护变化、本阶段测试内容与结果、清理情况、风险与遗留问题、下一步计划。
 - 即使某个栏目暂无内容，也要写明“无”或“未提供”，不能省略章节。
 
 ## 测试 82：动态阶段报告能力字段检查
@@ -1423,7 +1423,7 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 期望：
 
 - 检查脚本能识别 `08-WebAPI补齐阶段报告.md` 这种“编号 + 中文阶段名”的自定义报告。
-- 缺少 WebAPI、功能、Bug、指纹、真实性保护、测试、清理、风险等章节时检查失败。
+- 缺少 Trace 计划内 WebAPI、计划外新增 WebAPI 原因、Trace-runtime 可执行闭环、XHR/fetch Session Bridge、XHR/fetch 请求语义审计、WebAPI 环境检测矩阵、对象形状审计矩阵、功能、Bug、指纹、真实性保护、测试、清理、风险等章节时检查失败。
 - 报告中出现连续问号或替换字符乱码时检查失败。
 - 中文内容正常时检查通过。
 
@@ -1433,7 +1433,12 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 
 期望：
 
-- `本阶段新增 / 修改的 WebAPI` 表格记录 WebAPI、挂载位置、类型、实现方式、addon-first 状态、证据来源和测试结果。
+- `Trace 计划内首轮实现 / 调整的 WebAPI` 表格记录 WebAPI、挂载位置、类型、实现方式、addon-first 状态、Trace 矩阵状态、证据来源和测试结果。
+- `计划外新增 WebAPI 与原因` 表格必须记录新增原因；原因是 `missed-from-trace` 时标为流程缺陷。
+- `Trace-runtime 可执行闭环` 记录 traceSourceHash、contractHash、runtimeSourceHash、baselineId、P0/P1 mismatch 和 audit-only 网络尝试数。
+- `XHR/fetch Session Bridge` 记录 offline-fixture / live-session-bridge、Session 持有者、TLS 客户端、Cookie 同步和检查结果。
+- `XHR/fetch 请求语义审计` 记录浏览器/Node transcript、Header/body diff、status=0/responseURL、事件顺序、reload realm 清理和多余 Node 请求。
+- `对象形状审计矩阵` 记录 baseline / audit / 私有状态实现和 `_` / `__` 泄露检查结果。
 - `本阶段新增功能` 记录功能入口和对最终产物的影响。
 - `本阶段修复的 Bug` 记录原因、修复方式、涉及文件、验证结果和防回退记录。
 - `本阶段新增 / 修改的指纹能力` 记录指纹类型、API、真实样本来源、回放方式和风险。
@@ -2249,3 +2254,90 @@ node scripts/check_code_quality.js --dir case/result --json
 - 不能因为文件名包含 `probe`、`runtime`、`signer`、`diagnostic`、或当前脚本只是“诊断执行器”就豁免模块化要求。
 - 修复方向必须是：probe / signer 只保留入口编排和结果摘要；WebAPI 主体拆入 `src/env/` 或 `src/node-runtime/env/`，例如 `browser-objects/navigator.js`、`browser-objects/document.js`、`fingerprint/canvas.js`、`fingerprint/webgl.js`、`network/xhr.js`、`network/fetch.js`。
 - 质量检查失败时不得继续最终请求验证或交付；必须先重构、补充 UTF-8 中文注释、复跑 `check_code_quality.js` 与 `check_webapi_addon_coverage.js` 通过后再继续。
+
+## 测试 131：Trace inventory 通过但 runtime 行为不一致必须阻断
+
+输入场景：原始 Trace 已命中 `XMLHttpRequest` 与 `performance`，`trace-api-inventory.json` 把两项都标为 `implemented-first-pass`；当前 Node runtime 虽然存在同名对象，但 XHR 的 brand / prototype 为 `[object EventTarget]`，或 `Performance` 的继承链、descriptor、receiver、返回值与浏览器 Trace 不一致。
+
+执行：
+
+```bash
+node scripts/build_trace_runtime_contract.js --case-dir case --baseline-id baseline-a --markdown
+node scripts/run_trace_runtime_audit.js --case-dir case --entry case/result/final.js --markdown
+node scripts/check_trace_runtime_conformance.js --case-dir case --markdown
+node scripts/check_trace_api_coverage.js --case-dir case --require-runtime-closure --markdown
+```
+
+期望：
+
+- 仅有同名对象、inventory 状态或手工 `matched` 不得通过。
+- contract 必须包含 realm、receiver、descriptor、brand、prototype、ownKeys、结果 / 异常摘要和 sequence 证据；Node audit 必须逐项提供实际观测。
+- XHR brand / prototype 或 Performance 继承链错误时，P0/P1 mismatch 大于 0，检查失败。
+- 修正 Node runtime 后重新生成 audit，且 `traceSourceHash`、`contractHash`、`runtimeSourceHash`、`baselineId` 均匹配时才允许通过。
+
+## 测试 132：XHR 幻影请求、错误 responseURL 与生命周期差异必须阻断
+
+输入场景：浏览器 transcript 只有一条 POST XHR；Node transcript 除该 POST 外额外产生一条 GET，或失败 XHR 的 `status=0` 仍把 request URL 写入 `responseURL`，或 readyState / load / error / loadend 顺序与浏览器不同。
+
+执行：
+
+```bash
+node scripts/check_xhr_fetch_semantics.js --case-dir case --require --require-no-send --out case/tmp/xhr-fetch-semantics-audit.json --markdown
+```
+
+期望：
+
+- 多余 GET 必须列入 `extraNodeRequests` 并阻断，不得按“目标请求成功”忽略。
+- `status=0` 时 `responseURL` 必须为空；非空时无条件失败。
+- actor、realm、navigation epoch、method、URL、Header 有序列表、重复 Header、body length/SHA256/content-type、status/statusText/responseURL、readyState/event/Promise 顺序都必须实际比较。
+- 修正 transcript 后 mismatch 与 extra Node request 同时为 0 才允许通过。
+
+## 测试 133：对象形状不得只按 target 名称或私有属性前缀判断
+
+输入场景：浏览器与 Node audit 都包含名为 `XMLHttpRequest` 的 target，且 Node 对象没有 `_` / `__` 自有属性，但 Node 的 `Symbol.toStringTag`、prototype chain、ownKeys、descriptor 或非法 receiver 行为与浏览器 baseline 不一致。
+
+执行：
+
+```bash
+node scripts/check_object_shape_audit.js --case-dir case --markdown
+```
+
+期望：
+
+- target 名称相同、没有下划线属性或手工填写 `matched` 都不能直接通过。
+- 必须逐字段比较 brand、prototype chain、ownKeys、descriptor、getter / method receiver、构造行为和异常类型。
+- 任一必需字段缺失或不同都要阻断；修正实际对象形状并重新采样 Node audit 后才允许通过。
+
+## 测试 134：Session Bridge 必须有运行时同 Session 证明
+
+输入场景：源码包含 `curl_cffi`、`IPC`、`live-session-bridge` 等关键词，但 bridge audit 没有真实 round trip、`sameSessionVerified=false`、runtime hash 已过期，或 Python `curl_cffi` 场景由 Node 而不是 `final.py` 持有 session。
+
+执行：
+
+```bash
+node scripts/check_xhr_fetch_session_bridge.js --case-dir case --require-live --tls-client curl_cffi --markdown
+```
+
+期望：
+
+- 静态关键词与架构说明只算线索，不算通过证据。
+- 必须存在 `xhr-fetch-session-bridge-audit/v2`，记录实际 round trip、同一 Cookie jar / session id、runtime source hash 和通过的 XHR/fetch semantics audit。
+- `sameSessionVerified=false`、零 round trip、hash 失效或缺少语义审计时必须失败。
+- 使用 Python `curl_cffi` 时 `sessionOwner` 必须为 `final.py`；Node 只能负责 WebAPI 语义与 IPC 协议。
+
+## 测试 135：真实请求前必须聚合执行 environment closure
+
+输入场景：Trace coverage、对象形状、WebAPI 检测矩阵、XHR/fetch 语义和 Session Bridge 中四项通过，但 Trace runtime inventory / contract / audit 缺失或存在 P0/P1 mismatch。
+
+执行：
+
+```bash
+node scripts/check_environment_closure.js --case-dir case --before-real-request --require-live --tls-client curl_cffi --markdown
+```
+
+期望：
+
+- 总门禁必须实际调用并汇总 Trace runtime、对象形状、WebAPI 检测矩阵、XHR/fetch semantics 与 Session Bridge 五类检查。
+- 任一子检查失败时总检查必须非零退出，不得因为其余检查通过而放行真实请求。
+- 输出必须记录每个子检查的状态、阻断原因及 `traceSourceHash`、`contractHash`、`runtimeSourceHash`、baselineId、P0/P1 mismatch、network mismatch、extra Node request 数。
+- 所有子检查使用当前源码与当前 baseline 的机器生成证据通过后，才允许进入真实请求。

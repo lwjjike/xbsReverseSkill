@@ -2,7 +2,7 @@
 
 name: web-js-env-patcher
 
-description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、xbs.dom.createDocument、createNativeCollection/getMimeTypesAndPlugins/jsEnv、通用代码变更记忆、中文注释质量、signer/probe 模块化门禁、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、长指纹日志 4000/4096 截断防护、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、动态 HTML/JS 资源过期识别与运行时刷新、验证码接口确认与 web-verify-patcher 交接、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露阻断、Cookie 生成链路、补环境框架选择（默认不使用，可选 isolated-vm/vm/jsEnv）、TLS 指纹兼容请求客户端、中文阶段报告、最终总结/API回放分类明细、高强度检测通用门禁、native能力缺口、ruyiPage/RuyiTrace、Camoufox/MCP、CloakBrowser 取证、isTrusted 可信输入规避、addon / xbs isolated-vm ABI 恢复。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
+description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于网页端 JS/Node.js 补环境、env.js/runner.js、缺失环境追踪、Proxy 探测、真实对象固化、toString/native-like、属性描述符/原型链/访问器/实例对象保护、addon-first、新版 addon API、xbs.dom.createDocument、createNativeCollection/getMimeTypesAndPlugins/jsEnv、通用代码变更记忆、中文注释质量、signer/probe 模块化门禁、document.all、Canvas/WebGL/WebGPU/Audio/字体/DOM 几何等指纹终端 API 真实值回放、长指纹日志 4000/4096 截断防护、WebAPI 环境检测矩阵、iframe/Worker/PerformanceObserver/DOM-CSSOM/task queue/writer 分支行为 diff、定位 sign/x-s/a_bogus/h5st/token、cURL/HAR 校验、动态 HTML/JS 资源过期识别与运行时刷新、验证码接口确认与 web-verify-patcher 交接、JS bundle/chunk/sourcemap 收集、XHR/fetch Hook 与 source/entry/builder/writer 链路、Node 泄露阻断、Cookie 生成链路、补环境框架选择（默认不使用，可选 isolated-vm/vm/jsEnv）、TLS 指纹兼容请求客户端、XHR/fetch live session bridge、curl_cffi 同 session 桥接、浏览器对象私有状态泄露阻断、对象形状审计矩阵、中文阶段报告、最终总结/API回放分类明细、高强度检测通用门禁、native能力缺口、ruyiPage/RuyiTrace、Camoufox/MCP、CloakBrowser 取证、isTrusted 可信输入规避、addon / xbs isolated-vm ABI 恢复。不要用于 App/移动端/小程序/Windows/Native 逆向、纯算重写；默认不主动分析 JSVMP 源码。"
 ---
 
 
@@ -56,24 +56,28 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 - `references/env-debug-loop.md`：当前置材料已确认，准备在 Node.js 中运行目标 JS、追踪缺失环境、生成 `env.js` / `runner.js` 骨架时读取。
 
 - `references/trace-api-coverage.md`：当存在 RuyiTrace NDJSON、Node trace、Hook 环境访问日志、`missing-env.json` 或任何环境访问证据，并准备进入第一版 Node.js 补环境实现、signer probe、WebAPI 补齐或解释阶段报告里的计划外新增 WebAPI 时读取；用于强制把 Trace 命中的 WebAPI 转成 `trace-api-inventory.json`、`env-coverage-matrix.md` 和首轮实现 / 采样 / 暂不挂载 / native 能力缺口决策，禁止 Trace 已命中 API 后续被动遇错再补。
+- `references/trace-runtime-conformance.md`：只要存在 Trace 且第一轮 env 已实现、准备运行 signer probe、判断 writer 或发送请求时读取；用于把原始 Trace 转成 `trace-runtime-contract.json`，在强制 no-send 模式运行当前 runtime，生成绑定 `contractHash` / `runtimeSourceHash` 的 Node audit，并逐项比较 realm、receiver、descriptor、brand、prototype、ownKeys、返回值、异常和调用顺序。P0/P1 未闭环时不得继续。
 
 - `references/runtime-frameworks.md`：每次进入正式 Node.js 补环境阶段前读取，用于提醒用户选择是否使用补环境框架（默认不使用，可选 xbs isolated-vm / vm / jsEnv）；当存在 RuyiTrace / Node trace 日志时也读取，用于基于 Trace 评估项目复杂度、风险点和补环境优先级，但复杂度评估不得自动决定补环境框架选择；用户选择 isolated-vm 时必须使用随包魔改 xbs isolated-vm 并自检 `window.xbs` 17 个核心 API、`xbs.dom.createDocument` 和 DOM smoke test，用户选择 jsEnv 时必须先确认其项目路径、安装方式和入口文档，不得虚构 API。
 
 - `references/env-object-model.md`：当需要补 `window`、`document`、`navigator`、`location`、`Storage`、`crypto`、`performance`、`fetch`、`XMLHttpRequest` 等对象模型时读取；该文件只决定“补哪些对象”，不降低对象真实性要求，已补对象必须默认遵循 addon-first、构造函数 / 原型链 / 实例工厂、属性描述符、访问器、`Symbol.toStringTag`、非法构造行为和 native-like 保护。
 
 - `references/env-native-protection.md`：每次进入 Node.js 补环境阶段或准备编写 / 修改 env 模块时读取；toString、属性描述符、原型链、访问器、实例对象 toString 与 addon-first 不是等检测到才做，而是默认硬性基线，除非用户明确要求不保护或不使用 addon。
+- `references/object-shape-private-state.md`：每次实现或修改 `window` / `document` / `navigator` / DOM / Event / Storage / XHR / fetch / Response / Headers / Performance 等浏览器可见对象时读取；用于强制私有状态不得以 `_` / `__` 自有属性泄露，必须使用 addon / xbs private API、原生内部槽或模块级 `WeakMap`，并生成 `browser-object-shape-baseline.json`、`node-object-shape-audit.json` 与 `object-shape-audit.md`。
 - `references/addon-api.md`：每次进入补环境阶段、使用 `addon.node` 或 xbs native API、修改 `native-protect.js` / addon helper、处理 `createProtoChains` / `createNativeObject` / `createNativeCollection` / `createInterceptor` / `createUndetectable` / `getMimeTypesAndPlugins` / `getPrivate` / `setPrivate` / `hasPrivate` / `deletePrivate` / 注册表管理 API 时读取；新代码优先新版 API，禁止把旧式 `createProtoChains(name, chain)` 或 `createNativeObject(tag, proto, properties)` 写成主路径；`navigator.plugins` / `navigator.mimeTypes` 必须优先使用 `getMimeTypesAndPlugins(config)`。
 - `references/node-version-recovery.md`：当 addon.node 或随包魔改 xbs isolated-vm 因 Node ABI 不兼容加载失败时读取；addon 兼容 Node.js v25.8.2，xbs isolated-vm 兼容 Node.js v26.3.1，必须先检测 nvm 并征得用户同意是否安装 / 切换兼容 Node，用户拒绝后才允许 fallback、提供匹配构建产物或改选框架。
 - `references/xbs-isolated-vm-api.md`：当用户选择 `isolated-vm` 补环境框架、运行 `scripts/check_xbs_isolated_vm.js`、或在 isolated-vm Context 内编写 WebAPI 补环境代码时读取；该模式必须使用随包魔改 xbs isolated-vm，优先通过 `window.xbs` / `globalThis.xbs` 创建构造函数、访问器、集合对象、plugins/mimeTypes、`document.all`、私有状态，并通过 `xbs.dom.createDocument(options)` 创建基础 DOM；不要桥接旧 `addon.node`。
 - `references/native-capability-gap.md`：当纯 JS fallback、当前 addon.node API、当前 xbs isolated-vm / xbs.dom API 都无法可靠表达目标浏览器行为时读取；必须输出 native 能力缺口报告、建议新增 API、最小行为测试用例和通过标准，等待用户扩展 native 能力或明确接受临时 workaround，不得硬凑或伪造成功。
 - `references/code-change-memory.md`：复杂 case、修改 `case/result/` 源码、反复修同一文件 / 函数、或任何关键工程逻辑存在回退风险时读取；默认维护 `case/notes/代码变更记忆.md`，记录改了什么、为什么改、已失败尝试、禁止回退、验证范围和遗留风险。
-- `references/code-style.md`：每次生成、重构或交付 `case/result/` 补环境代码前读取；用于约束最终代码简洁、模块化、可读、有中文注释、UTF-8 无乱码、中文注释不出现问号，并要求运行 `scripts/check_code_quality.js` 与 `scripts/check_webapi_addon_coverage.js`；`src/signer/`、`runtime_probe.js`、`probe.js`、`runner.js`、`diagnostic.js` 不得承载 navigator / document / canvas / webgl / performance 等 WebAPI 补环境主体，必须拆入 `src/env/` 或 `src/node-runtime/env/`；选择 isolated-vm 时补环境源码也必须按 `navigator.js` / `document.js` / `window.js` / `canvas.js` / `webgl.js` 等真实文件拆分，不得以大段 `String.raw` / `*_SCRIPT` 字符串作为主要交付形态。
+- `references/code-style.md`：每次生成、重构或交付 `case/result/` 补环境代码前读取；用于约束最终代码简洁、模块化、可读、有中文注释、UTF-8 无乱码、中文注释不出现问号，并要求运行 `scripts/check_code_quality.js`、`scripts/check_object_shape_audit.js`、`scripts/check_xhr_fetch_session_bridge.js` 与 `scripts/check_webapi_addon_coverage.js`；`src/signer/`、`runtime_probe.js`、`probe.js`、`runner.js`、`diagnostic.js` 不得承载 navigator / document / canvas / webgl / performance 等 WebAPI 补环境主体，必须拆入 `src/env/` 或 `src/node-runtime/env/`；选择 isolated-vm 时补环境源码也必须按 `navigator.js` / `document.js` / `window.js` / `canvas.js` / `webgl.js` 等真实文件拆分，不得以大段 `String.raw` / `*_SCRIPT` 字符串作为主要交付形态；XHR/fetch 真实请求必须走 live session bridge，浏览器对象私有状态不得以 `_` / `__` 自有属性泄露。
 
 - `references/fingerprint-value-replay.md`：当目标 JS 访问 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何等指纹 API，或 Node.js 第三方库模拟结果与真实浏览器不一致时读取；用于真实浏览器采样、终端 API 值回放、长指纹日志 4000/4096 截断防护、禁止最终流程退回自动化；读取前应先按 `references/fingerprint-baseline-consistency.md` 固化本 case 指纹基线。
 
 - `references/high-strength-browser-detection.md`：当目标出现 403 / 429 / challenge / bot block / verify / captcha / 风控页、入口 HTML 注入检测脚本、单 API 请求失败但浏览器入口页成功、或疑似 Cloudflare / Turnstile / Akamai / DataDome / Kasada / Shape / F5 等高强度检测时读取；用于抽象通用环境检测、指纹检测、自动化痕迹、入口页状态链、TLS / Header / Session 一致性和失败排查顺序，不写任何厂商专用绕过逻辑。
 
 - `references/high-intensity-env-diff.md`：当目标疑似 Shape / F5 / Akamai / DataDome / Kasada / reese84 / bx-* 等高强度浏览器完整性检测，或出现异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链 walk、brand check、MutationObserver、userAgentData、window.chrome、canPlayType、mediaSession、Header / Client Hints 一致性、动态风控 JS 多版本回归等问题时读取；用于真实浏览器基线与 Node 补环境行为 diff、高强度检测覆盖矩阵和最终总结记录，但仍不得主动分析 JSVMP 源码。
+
+- `references/webapi-env-detection-matrix.md`：当 Trace、RuyiTrace、阶段报告或失败 diff 出现 iframe / Window realm、Worker / MessagePort、PerformanceObserver / PerformanceTimeline、DOM / CSSOM、EventTarget、structuredClone / DataCloneError、timer / task queue、XHR / fetch / sendBeacon / image / favicon resource timing、对象形状 / 私有状态泄露、reload writer / form writer / final writer 分支差异时读取；用于生成 `browser-env-detection-baseline.json`、`node-env-detection-audit.json` 和 `webapi-env-detection-matrix.md`，把“API 已存在”升级为“浏览器行为一致”，检查不通过时不得继续真实请求验证。
 
 - `references/node-leakage-and-silent-failure.md`：当进入 Node.js 运行、输出不一致、怀疑 Node 泄露、SDK init 缺参、时间随机或存储差异时读取；补环境前必须读取，用于阻断 `process/Buffer/require/module/global` 以及 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ `localStorage/sessionStorage`、`performance.nodeTiming/eventLoopUtilization/timerify`、宿主 `fetch/WebSocket`、`URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等 Web API 兼容层泄露。
 
@@ -98,12 +102,14 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 - `references/tls-request-validation.md`：每个需要最终发送真实请求的 case 从前置阶段就读取，用于让用户选择最终请求 TLS 指纹兼容客户端；当用户提到 CycleTLS、impers、curl-cffi-node、curl_cffi、cffi_curl、cyCronet，准备把请求逻辑写入 `final.js` / `final.py`，或需要将 curl_cffi 的 Firefox TLS / JA3 / JA4 / HTTP2 指纹对齐到 ruyiPage / Firefox baseline 时也读取；Firefox baseline 不得只改 UA，必须按 `ja3 + akamai + extra_fp + curl_options` 采样验证，cyCronet 默认只作为 Chromium / Chrome baseline 优先方案。
 
 - `references/session-request-chain.md`：每个需要最终发送真实请求、交付 `final.js` / `final.py`、实现动态资源刷新或 Cookie / challenge 生成链路的 case 都读取；最终请求一律使用 Session 模式，同一 session 贯穿前置请求、动态资源刷新、参数生成前后请求和目标 API，请求结束后销毁 session。
+- `references/xhr-fetch-session-bridge.md`：当补环境实现 `XMLHttpRequest`、`fetch`、`Request`、`Response`、`Headers`、`navigator.sendBeacon`，或目标 JS 通过 XHR/fetch 获取动态资源、challenge、Cookie、telemetry、resource timing 时读取；如果最终用户选择 curl_cffi / cffi_curl / cyCronet / CycleTLS / impers 等 TLS 指纹兼容客户端，JS 侧 XHR/fetch 必须通过 live session bridge 复用同一 session 真实发送，fixture/mock 只能标为离线诊断，不能宣称已解决 TLS 指纹。
+- `references/xhr-fetch-semantics-audit.md`：每次实现或修改 XHR/fetch/sendBeacon、request/response bridge、reload/navigation 生命周期、Header/body 序列化或 response completion 时读取；真实请求前必须生成浏览器与 Node no-send network transcript，逐条比较 actor、realm、navigation epoch、URL、Header 顺序、body 字节 hash、status/responseURL、事件顺序、resource timing 和旧 realm 任务取消。不得等用户提出“对比请求头/请求体”后才执行。
 
 - `references/validation.md`：当需要测试 Skill 行为、编写预期提醒、检查边界场景时读取。
 
 - `references/stage-markdown-reports.md`：每个高难度、多轮对话或需要沉淀阶段结论的 case 从前置阶段开始读取；用于默认生成 `case/阶段报告/01-需求信息确认.md` 等中文命名 UTF-8 Markdown 阶段报告，并在每个合适推进节点记录项目进展、修改文件、Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、新增功能、Bug 修复、指纹能力、真实性保护、测试结果、清理状态、风险和下一步计划。
 
-- `references/final-project-summary.md`：项目完成后或准备最终交付时必须读取并生成 `result/最终项目总结.md`；最终总结是默认硬性产物，除非用户明确要求不生成。报告文件名必须为中文，必须用 UTF-8 写入，必须包含 native addon / NativeProtect 使用情况、按类别分组的“环境与指纹 API 调用回放明细”（例如 navigator、document、window、canvas、webgl 等分类）和“高强度环境检测覆盖矩阵”；RuyiTrace 章节仅在用户选择 ruyiPage + RuyiTrace 或提供 RuyiTrace NDJSON 时保留。
+- `references/final-project-summary.md`：项目完成后或准备最终交付时必须读取并生成 `result/最终项目总结.md`；最终总结是默认硬性产物，除非用户明确要求不生成。报告文件名必须为中文，必须用 UTF-8 写入，必须包含 native addon / NativeProtect 使用情况、按类别分组的“环境与指纹 API 调用回放明细”（例如 navigator、document、window、canvas、webgl 等分类）、“WebAPI 环境检测矩阵”和“高强度环境检测覆盖矩阵”；RuyiTrace 章节仅在用户选择 ruyiPage + RuyiTrace 或提供 RuyiTrace NDJSON 时保留。
 
 - `references/cleanup.md`：当创建 case 目录、临时文件、HAR、浏览器 Profile、hook 脚本、trace 或日志时读取。
 
@@ -176,6 +182,8 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
 24a. **Trace API 覆盖矩阵门禁**：只要存在 RuyiTrace NDJSON、Node trace、Hook 环境访问日志、`missing-env.json` 或等价环境访问证据，进入第一版 `env` / `node-runtime` / signer probe 前必须读取 `references/trace-api-coverage.md`，并生成 `case/notes/trace-api-inventory.json`、`case/notes/env-coverage-matrix.md` 和更新后的 `case/notes/missing-env-priority.md`。Trace 已命中的 P0/P1 WebAPI 必须在矩阵中明确为 `planned-first-pass` / `implemented-first-pass` / `needs-baseline-sampling` / `deferred-not-mounted` / `native-capability-gap` 等状态；不得保持 `unplanned`，也不得等 ReferenceError、TypeError、writer 不触发或 body 差异出现后再被动新增。Canvas / WebGL / Audio / DOM 几何 / Speech / Storage estimate / Permissions / Plugins / MimeTypes 等真实值类 API 如果 Trace 命中但值缺失、截断或 baseline 不一致，必须先标为 `needs-baseline-sampling` 并同 `baselineId` 采样，不得先挂空壳。运行 signer probe 前执行 `scripts/check_trace_api_coverage.js --case-dir case --markdown`；检查失败时下一阶段只能修复覆盖矩阵、补齐首轮实现、补采样本或进入 native 能力缺口闭环，不能继续新增功能、发送请求或宣称阶段验证通过。后续阶段报告若出现计划外新增 WebAPI，必须说明 `trace-not-covered`、`dynamic-resource-new-branch`、`baseline-mismatch`、`trace-truncated`、`native-gap` 或 `missed-from-trace`；其中 `missed-from-trace` 必须标为流程缺陷并补写矩阵与代码变更记忆。
 
+24b. **Trace 必须形成可执行 runtime closure，不得只做 inventory**：第一轮 env 实现完成后、每次修改任何环境模块后、动态资源刷新后、切换 baseline 后，以及运行 signer probe / writer 判断 / 真实请求前，必须读取 `references/trace-runtime-conformance.md`。先运行 `scripts/build_trace_runtime_contract.js --case-dir case --baseline-id <baselineId> --markdown`，再由当前最终入口支持 `--audit-only` 和 `WEB_JS_ENV_PATCHER_NO_NETWORK=1`，运行 `scripts/run_trace_runtime_audit.js --case-dir case --entry case/result/final.js --markdown`（Python 入口改为 `final.py`），最后运行 `scripts/check_trace_runtime_conformance.js --case-dir case --markdown` 与 `scripts/check_trace_api_coverage.js --case-dir case --require-runtime-closure --markdown`。`implemented-first-pass` 必须对应真实存在且已加载的实现文件；Markdown/JSON 手工填写 `matched`、只保留 Top API、只有 target 名称、缺少返回值/descriptor/prototype/realm/sequence 观测均不算通过。Trace、contract 或 `result/` 源码哈希变化后旧 audit 自动失效。任一 P0/P1 契约缺失、行为不一致或 audit-only 阶段发生真实网络访问时，只能修复环境并重跑闭环，不得继续请求。
+
 25. **普通上下文无法继续时再次征询框架选择**：如果用户默认未使用框架，但后续遇到普通上下文难以解决的 Node 泄露、Realm / intrinsic 差异、`Function("return this")()`、`constructor.constructor`、全局对象污染或多 fixture 互相影响等环境检测问题，必须暂停并再次提醒用户可选择 `isolated-vm`、`vm`、`jsEnv` 或继续不使用框架；不得擅自切换。
 
 26. **RuyiTrace 优先诊断与长字段截断保护**：如果取证模式为 ruyiPage + RuyiTrace，或用户明确说已经 trace 好 / 已提供 NDJSON 日志，进入补环境阶段、编写 `env.js`、补任何 WebAPI，或遇到 ReferenceError、TypeError、输出不一致、指纹对象缺失、静默失败、toString / descriptor / 原型链异常等环境问题时，必须先导入并查看 RuyiTrace NDJSON 与 `notes/ruyitrace-summary.md`，按 `api`、`stack.file / line / col`、时间邻近度和目标参数生成链路定位环境依赖；必须把命中证据写入 `notes/trace-api-inventory.json`、`notes/env-coverage-matrix.md` 和 `notes/missing-env-priority.md` 后再补环境。RuyiTrace 中达到或接近 4000 / 4096 字符的字符串字段必须视为疑似截断：只能记录可见长度、最小长度和 hash，真实长度写 `unknown`，不得把 4000、4096 或可见长度当成加密参数、Canvas / WebGL / WebGPU / Audio 等长指纹值的真实长度；需要完整值时必须通过 HAR/cURL、ruyiPage 网络抓包、专用 Hook 分片落盘或最终 signer 输出补采。只有日志缺失、不覆盖该逻辑或结论不足时，才使用 `run_with_trace.js` / Proxy trace 作为补充。不得在已有可用 NDJSON 时跳过日志直接盲补 `env.js`；后续若新增的 WebAPI 已在 Trace 中命中但未进入覆盖矩阵，必须按 `missed-from-trace` 流程缺陷处理。
@@ -187,10 +195,12 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 29. **补环境初始化即 addon-first / xbs native-first**：进入 Node.js 补环境阶段的第一步就必须检测 native 能力：普通 Node runtime 运行 `scripts/load_native_addon.js --json` 或等价加载 / 记录 addon 可用性；如果用户选择 `isolated-vm`，运行 `scripts/check_xbs_isolated_vm.js --markdown` 并在 Context 内记录 `window.xbs` 与 `xbs.dom.createDocument` 可用性；不要等检测到 `toString`、属性描述符、原型链或 `document.all` 问题后才考虑 native 能力。创建 native-like 函数、WebAPI 普通方法、构造函数、getter、setter、实例对象、集合对象、`navigator.plugins` / `navigator.mimeTypes`、`document.all`、`createNativeObject` / `createProtoChains` / `createNativeCollection` / `getMimeTypesAndPlugins` 支持的对象时，addon.node 或 xbs native API 可用必须优先使用 native API；`Blob`、`File`、`FormData`、`Event`、`XMLHttpRequest`、`screen`、`indexedDB`、`navigator.plugins`、`navigator.mimeTypes`、`HTMLCollection`、`NodeList`、`PluginArray`、`MimeTypeArray`、`URL.createObjectURL`、`CSS.supports`、Observer、MessageChannel、Canvas/WebGL、Audio、Worker 等进入补环境范围后，也必须从第一版实现就走 native-first；其中 plugins / mimeTypes 必须优先走 `getMimeTypesAndPlugins(config)`，集合对象必须优先走 `createNativeCollection`。如果 addon.node 出现 ABI 不兼容，不得直接降级；先读取 `references/node-version-recovery.md`，提示 addon 兼容 Node.js v25.8.2，检测 nvm 后让用户选择自动安装 nvm、手动安装 nvm、提供已安装 nvm 路径，或拒绝切换 Node。用户同意后用 nvm 安装 / 切换 v25.8.2 并重新加载 addon；只有用户明确拒绝、当前平台缺失、切换后仍失败、用户明确要求不使用 native 能力或 API 调用失败时，才降级为 `NativeProtect` / JS fallback，并把豁免或降级原因写入 notes、阶段输出和最终总结。
 
 30. **真实性保护默认开启**：补环境阶段采用探测 / 交付双模式，探测模式允许 Proxy 记录访问路径；从第一次编写 env 骨架开始就必须按真实浏览器对象模型固化关键 WebAPI，而不是等 trace 或目标检测命中后才补保护。所有新增或修改的关键 WebAPI 默认使用 `Object.defineProperty` / `defineProperties` 描述符、getter / setter、构造函数、原型链、函数 toString 保护、访问器 toString 保护、实例对象 `Object.prototype.toString` / `Symbol.toStringTag` 保护、`constructor` 和 `instanceof` 链路；构造函数失败时的错误类型、错误构造器、`message` 和直接调用 / `new` 调用差异必须按目标浏览器采样复现，不能统一写泛化 `Illegal constructor`；addon 构造函数 / `createProtoChains` 实例工厂创建出的对象不要再用 `markObjectType` 或 `markObjectToString` 二次伪装对象类型，只有 JS fallback 普通对象才允许 `markObjectToString` 并记录原因；禁止把 `ctx.X = function(){}`、`ctx.X = { method(){} }`、`prototype = { method(){} }`、`Object.assign(ctx, { ...method(){} })`、`ctx.X = globalThis.X` 作为 WebAPI 主路径。只有用户明确要求关闭保护时才可豁免并记录原因。
+
+30a. **浏览器对象私有状态不得泄露**：每次实现或修改浏览器可见对象前必须读取 `references/object-shape-private-state.md`。任何能被目标 JS 拿到的对象、实例、prototype、构造函数、集合对象、XHR / fetch / Response / Headers / Request / Event / DOM 节点 / Storage / Performance 等，都不得通过 `this.__xxx`、`this._xxx`、`Object.defineProperty(obj, "__xxx"...)`、`defineValue(obj, "_xxx", ...)` 或自定义 Symbol 暴露内部状态；即使设为 non-enumerable，也会被 `Object.getOwnPropertyNames`、`Reflect.ownKeys`、descriptor、`in`、prototype walk 检测到。内部状态优先使用 addon / xbs 的 `setPrivate/getPrivate/hasPrivate/deletePrivate`，其次使用模块级 `WeakMap`；JS fallback 必须保证 `Object.keys`、`Object.getOwnPropertyNames`、`Reflect.ownKeys`、`for...in`、descriptor、`hasOwnProperty`、`propertyIsEnumerable` 与真实浏览器 baseline 一致。涉及高强度检测、XHR/fetch、DOM、EventTarget、Storage、Performance、iframe / Worker 时，真实请求前必须生成 `case/fixtures/browser-object-shape-baseline.json`、`case/tmp/node-object-shape-audit.json` 和 `case/notes/object-shape-audit.md`，并运行 `scripts/check_object_shape_audit.js --case-dir case --markdown`；存在 `_` / `__` 泄露或阻断状态时不得继续请求验证或交付。
 31. **native 能力缺口闭环**：如果某个浏览器行为无法通过纯 JS fallback 可靠实现，并且当前 addon.node API 与 xbs isolated-vm / xbs.dom API 也无法覆盖，必须先读取 `references/native-capability-gap.md`，不要继续硬凑 JS workaround，也不要假装 addon / xbs 已解决。先区分“当前实现不完整”“已有 native API 用法错误”“确实缺少 native 能力”：前两类继续修补或改为 addon-first / xbs native-first；第三类暂停实现，输出 `case/notes/native-capability-gap.md`，说明阻塞 API / 行为、触发位置、真实浏览器基线、纯 JS / addon / xbs 当前结果、无法解决原因、建议新增 native API、最小行为测试用例和通过标准。测试用例必须能在真实浏览器与目标 native 后端运行，覆盖导致阻塞的关键表达式；只有用户更新 addon.node 或 xbs isolated-vm 并让测试通过后，才能把该点标记为已解决。用户选择临时 workaround 时必须写明“仅当前样本路径临时兼容”；用户拒绝扩展 native 能力且目标参数生成必须依赖该行为时，标记 case 阻塞，不得伪造成功。能力缺口报告、用户选择和测试结果必须写入阶段报告与最终总结。`document.all` / HTMLDDA、内部槽 brand check、跨 Realm 行为、DataCloneError、Error stack、不可检测对象等都适用该闭环。
 32. **通用代码变更记忆默认维护**：复杂 case 或修改任何关键源码前必须读取 `references/code-change-memory.md`，并读取 / 创建 `case/notes/代码变更记忆.md`；修改前搜索相关文件名、函数名、参数名和错误关键词，避免写回已失败方案；修改后立即追加记录，写明修改前逻辑、问题证据、本次修改、修改理由、已失败尝试、禁止回退、验证命令、验证结果、当前验证范围、遗留风险和当前状态。不要把“当前报错消失”写成无验证范围的固定结论，只能写成“临时修复”“当前验证通过”“稳定基线”等有范围的状态；交付前必须按本轮变更运行 `scripts/check_change_memory.js --case-dir case --changed <file> --require-entry --markdown` 或说明用户明确豁免。
 
-33. **补环境代码质量默认约束**：生成或修改最终补环境代码前必须先读取 `references/code-style.md`，先规划目录和文件职责，再编码；代码必须简洁、模块化、具名函数清晰、无压缩堆叠、无临时调试痕迹，属性描述符、构造函数 callback、WebAPI 方法安装、`Object.assign` 和较长 `try/catch` 不得压成一行，并在文件头、关键 WebAPI、getter / setter、addon-first、fallback、构造函数错误采样、指纹回放和加密入口处写中文注释。`src/signer/`、`src/request/`、`src/resources/`、`runtime_probe.js`、`probe.js`、`runner.js`、`diagnostic.js` 只允许做编排、入口、请求封装、资源刷新或安全摘要输出；只要文件里实现了 `navigator`、`document`、`window`、`screen`、`Storage`、`XMLHttpRequest`、`fetch`、Canvas、WebGL、Audio、performance、DOM 构造链、事件系统等 WebAPI 主体，就必须拆到 `src/env/` 或 `src/node-runtime/env/` 的真实模块中，不得以“只是 probe / signer / 诊断脚本”为理由豁免。存在 Trace 覆盖矩阵时，P0/P1 首轮实现文件路径必须和 `env-coverage-matrix.md` / `trace-api-inventory.json` 对齐，不能在 signer probe 中临时承载 Trace 已命中的 WebAPI 主体。选择 isolated-vm 时，`navigator`、`document`、`window`、`canvas`、`webgl`、`xhr`、`crypto` 等补环境实现必须是 `src/env/browser-objects/`、`src/env/fingerprint/` 等目录下的真实 `.js` 文件，由 runtime 按文件读取后注入 Context；不得把主要补环境源码写成 `String.raw` 大字符串、`CORE_SCRIPT` / `BROWSER_OBJECTS_SCRIPT` / `*_SCRIPT` 聚合文件，极小 bootstrap 例外需少于 40 行并说明原因。中文注释必须 UTF-8 正常显示，不得包含问号、连续问号或乱码；交付前必须运行 `scripts/check_code_quality.js --case-dir case --markdown`，检查失败时必须先重构并复测，禁止继续请求验证或交付。
+33. **补环境代码质量默认约束**：生成或修改最终补环境代码前必须先读取 `references/code-style.md`，先规划目录和文件职责，再编码；代码必须简洁、模块化、具名函数清晰、无压缩堆叠、无临时调试痕迹，属性描述符、构造函数 callback、WebAPI 方法安装、`Object.assign` 和较长 `try/catch` 不得压成一行，并在文件头、关键 WebAPI、getter / setter、addon-first、fallback、构造函数错误采样、指纹回放和加密入口处写中文注释。`src/signer/`、`src/request/`、`src/resources/`、`runtime_probe.js`、`probe.js`、`runner.js`、`diagnostic.js` 只允许做编排、入口、请求封装、资源刷新或安全摘要输出；只要文件里实现了 `navigator`、`document`、`window`、`screen`、`Storage`、`XMLHttpRequest`、`fetch`、Canvas、WebGL、Audio、performance、DOM 构造链、事件系统等 WebAPI 主体，就必须拆到 `src/env/` 或 `src/node-runtime/env/` 的真实模块中，不得以“只是 probe / signer / 诊断脚本”为理由豁免。存在 Trace 覆盖矩阵时，P0/P1 首轮实现文件路径必须和 `env-coverage-matrix.md` / `trace-api-inventory.json` 对齐，不能在 signer probe 中临时承载 Trace 已命中的 WebAPI 主体。选择 isolated-vm 时，`navigator`、`document`、`window`、`canvas`、`webgl`、`xhr`、`crypto` 等补环境实现必须是 `src/env/browser-objects/`、`src/env/fingerprint/` 等目录下的真实 `.js` 文件，由 runtime 按文件读取后注入 Context；不得把主要补环境源码写成 `String.raw` 大字符串、`CORE_SCRIPT` / `BROWSER_OBJECTS_SCRIPT` / `*_SCRIPT` 聚合文件，极小 bootstrap 例外需少于 40 行并说明原因。XHR/fetch 实现必须拆入 `src/env/network/` 或 `src/node-runtime/env/network/`，只允许通过 live session bridge 调用请求层；浏览器对象内部状态不得用 `_` / `__` 自有属性承载。中文注释必须 UTF-8 正常显示，不得包含问号、连续问号或乱码；交付前必须运行 `scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_object_shape_audit.js --case-dir case --markdown` 和 `scripts/check_xhr_fetch_session_bridge.js --case-dir case --markdown`，检查失败时必须先重构并复测，禁止继续请求验证或交付。
 
 34. **按 Level 1/2/3 分层补齐**：先基础运行层，再指纹真实性层，最后目标 SDK 专用层；不要把站点私有逻辑污染通用 env。
 
@@ -198,17 +208,25 @@ description: "面向网页端 JavaScript 的 Node.js 补环境 Skill。适用于
 
    **高强度环境行为 diff**：如果目标疑似 Shape / F5 / Akamai / DataDome / Kasada / reese84 / bx-* 等浏览器完整性检测，或出现异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链 walk、brand check、MutationObserver、userAgentData、window.chrome、canPlayType、mediaSession、Client Hints 一致性等检测迹象，必须先读取 `references/high-strength-browser-detection.md`，再读取 `references/high-intensity-env-diff.md`。先用真实浏览器采样行为基线，再在 Node 补环境中运行同类 probe 做 diff，输出 `case/notes/high-intensity-env-diff.md` 和最终总结覆盖矩阵；不得只因当前 sign 生成成功就跳过这些差异，也不得主动进入 JSVMP opcode / 字节码源码分析。
 
+   **WebAPI 环境检测矩阵**：如果 trace、阶段报告或失败 diff 出现 iframe / Window realm、Worker / MessagePort、PerformanceObserver / PerformanceTimeline、DOM / CSSOM、EventTarget、structuredClone / DataCloneError、timer / task queue、XHR / fetch / sendBeacon / image / favicon resource timing、对象形状 / 私有状态泄露、reload writer / form writer / final writer 分支差异，必须读取 `references/webapi-env-detection-matrix.md`。在真实请求、长跑验证或 final writer 判定前生成 `case/fixtures/browser-env-detection-baseline.json`、`case/tmp/node-env-detection-audit.json` 和 `case/notes/webapi-env-detection-matrix.md`；矩阵中存在 `needs-browser-baseline`、`needs-node-audit`、`mismatch`、`native-capability-gap` 或 `unknown` 时，不得继续真实请求验证。若后续补的 WebAPI 是因为该矩阵遗漏已触发行为，按 `missed-from-webapi-env-matrix` 流程缺陷记录。
+
 36. **样本验证优先**：不要以“不报错”为完成标准，必须用 fixtures 对比浏览器真实加密参数或关键输出。浏览器取证也不要以“抓到任意包”为成功标准；目标接口必须有非失败业务响应，跨域接口不能把单独的 `OPTIONS` preflight 当作成功。
 
-37. **最终交付必须是规范项目且只有一个入口**：最终交付可以包含规范目录和必要模块，例如 `src/env/`、`src/signer/`、`src/request/`、`package.json` 或 Python 包模块；但只能有一个直接执行入口，默认 `result/final.js`，用户明确选择 Python 请求验证时可为 `result/final.py`。执行该入口必须自动完成“安装补环境 → 创建已确认 TLS 客户端的 session → 调用目标入口生成加密参数 → 在同一 session 中发送模拟请求或按用户选择只输出本地参数 → 输出请求成功/失败结果 → finally 销毁 session”。不要把测试脚本、临时 runner、server、bridge、trace、HAR、hook、截图、Profile、缓存、指纹采样 Hook 或临时响应作为最终产物交付。
+37. **最终交付必须是规范项目且只有一个入口**：最终交付可以包含规范目录和必要模块，例如 `src/env/`、`src/signer/`、`src/request/`、`package.json` 或 Python 包模块；但只能有一个直接执行入口，默认 `result/final.js`，用户明确选择 Python 请求验证时可为 `result/final.py`。执行该入口必须自动完成“安装补环境 → 创建已确认 TLS 客户端的 session → 调用目标入口生成加密参数 → 在同一 session 中发送模拟请求或按用户选择只输出本地参数 → 输出请求成功/失败结果 → finally 销毁 session”。XHR/fetch live session bridge 只能作为该唯一入口内部受控 IPC / adapter 模块存在，不得成为另一个手动运行入口或常驻本地服务。不要把测试脚本、临时 runner、临时 server、临时 bridge、trace、HAR、hook、截图、Profile、缓存、指纹采样 Hook 或临时响应作为最终产物交付。
 
 38. **最终项目禁止浏览器自动化代码**：最终项目内任何交付文件都不得包含 ruyiPage、RuyiTrace 启动、Camoufox、camoufox-reverse-mcp、CloakBrowser、Playwright、Puppeteer、Selenium、CDP、WebDriver、`launch_browser`、`network_capture`、`page.goto`、`browser.launch` 等自动化取证代码。ruyiPage / RuyiTrace / Camoufox / camoufox-reverse-mcp / CloakBrowser 只允许出现在前置取证和日志分析阶段，不能进入最终项目代码。
 
 39. **最终发送请求只能用已确认的 Node.js 或 Python Session 客户端**：最终验证必须由 `final.js` 入口调用 Node.js CycleTLS / impers / curl-cffi-node 等 TLS 指纹兼容模块创建 session client，或由 `final.py` 入口调用 curl_cffi / cffi_curl / cyCronet 等模块创建 session client；即使只有一个请求也必须使用 session，动态资源刷新、Cookie / challenge 生成链路和目标 API 复用同一 Cookie jar / Header / UA / Client Hints / TLS 指纹 / 代理 / 指纹基线，并在成功或失败后销毁 session。不得先用普通客户端失败后再临时切换，不得生成加密参数后再通过浏览器自动化点击、导航或抓包验证。
 
+39a. **XHR/fetch 必须接入同一 live session bridge**：当目标 JS 会调用 `XMLHttpRequest`、`fetch`、`Request`、`Response`、`Headers`、`navigator.sendBeacon`，或这些网络 API 影响 Cookie、challenge、动态资源、telemetry、resource timing、writer 分支时，必须读取 `references/xhr-fetch-session-bridge.md`。如果用户选择发送真实请求，JS 侧 XHR/fetch 不得只返回 fixture / 默认 200 / mock response，也不得直接使用 Node 宿主 `fetch`、`http`、`https`、`axios`、`undici` 绕过已确认 TLS 客户端；必须通过 live session bridge 交给同一个 CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet session 发送，并把响应头、状态、body、Set-Cookie、Cookie jar、readyState / Promise / event 顺序同步回 JS 环境。若最终入口是 `final.py` 且客户端为 Python `curl_cffi`，则 `final.py` 必须持有唯一 session，并通过 stdio / IPC / 嵌入式 bridge 处理 Node JS runtime 发来的 XHR/fetch 请求；Node 侧只实现浏览器 API 语义和桥接协议，不自行发目标网络请求。离线 fixture 模式只能标注为 `offline-fixture` / `diagnostic-only`，不得写成 TLS 指纹已解决或真实请求已发送；交付前必须运行 `scripts/check_xhr_fetch_session_bridge.js --case-dir case --require-live --markdown`，或在用户明确选择“不发真实请求”时记录豁免。
+
+39b. **XHR/fetch 必须先通过 no-send 请求语义审计**：每次实现或修改 XHR/fetch/sendBeacon、bridge envelope、Header/body 处理、response completion、redirect/CORS/abort/timeout、reload/navigation 或 resource timing 时，必须读取 `references/xhr-fetch-semantics-audit.md`。从同一成功浏览器 baseline 生成 `case/fixtures/browser-network-transcript.ndjson`，让当前 Node runtime 在 `no-send` 模式生成 `case/tmp/node-network-transcript.ndjson`，再运行 `scripts/check_xhr_fetch_semantics.js --case-dir case --require --require-no-send --out case/tmp/xhr-fetch-semantics-audit.json --markdown`。必须逐条一致比较请求 actor、realm、navigation epoch、method、URL、Header 有序列表、body byte length/SHA256、Cookie/referrer/credentials、status/statusText/responseURL、响应头可见性、readyState/event/Promise 顺序和旧 realm pending task 清理。`status=0` 时不得回填 request URL；document navigation/reload 不得进入 XHR completion；真实浏览器没有的 XHR/fetch 请求 Node 不得多发。代码里出现 `curl_cffi` / `IPC` / `live-session-bridge` 只算线索，只有运行时 bridge audit、同一 session 证明和机器生成的语义 diff 同时通过才允许真实请求。
+
 40. **TLS 指纹兼容不是访问控制绕过**：TLS 指纹兼容客户端用于复现浏览器网络栈差异导致的最终验证请求。
 
-41. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；最终总结必须包含指纹基线一致性、最终请求 Session 请求链、按类别分组的环境与指纹 API 调用回放明细，精确到访问的属性、调用的方法、构造函数、getter / setter、调用参数摘要、返回值 / 回放值摘要、来源证据、补环境实现方式、真实性保护和验证结果；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程与合适推进节点生成其他阶段报告。阶段报告要覆盖 Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、功能、Bug 修复、指纹能力、真实性保护、测试与清理等能力增量；不得只写笼统“本阶段新增 / 修改的 WebAPI”。交付前可运行 `scripts/check_stage_reports.js --case-dir case --require-dynamic-fields --markdown` 检查。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_webapi_addon_coverage.js --case-dir case --markdown`、存在 Trace 时运行 `scripts/analyze_trace_complexity.js --case-dir case --markdown` 与 `scripts/check_trace_api_coverage.js --case-dir case --require-stage-audit --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查。任何一个检查失败都不得继续真实请求验证、不得交付、不得只在总结中说明风险；必须先重构或修复后复测通过。尤其 `check_code_quality.js` 发现 signer/probe 承载补环境主体、文件过大、中文注释不足、函数过长或压缩堆叠时，或 `check_trace_api_coverage.js` 发现 Trace 命中 P0/P1 API 未规划、计划外新增未说明原因、`missed-from-trace` 流程缺陷时，必须先拆分到 `src/env/` / `src/node-runtime/env/`、修正覆盖矩阵或补采样，再确认代码可读性与中文注释质量、WebAPI addon 覆盖、补环境真实性、addon-first/native fallback 记录、native 能力缺口闭环、补环境框架选择记录、Trace 复杂度评估与框架选择解耦、Trace API 覆盖矩阵、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、环境与指纹 API 调用回放分类明细、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python TLS 指纹兼容 Session 客户端实现并在结束后销毁、无多余测试/临时产物。
+41. **交付前自动检查、阶段报告与最终总结**：项目完成后默认先读取 `references/final-project-summary.md` 并使用 `scripts/write_markdown_utf8.js` 生成中文命名 `case/result/最终项目总结.md`；最终总结必须包含指纹基线一致性、最终请求 Session 请求链、XHR/fetch live session bridge、对象形状审计矩阵、WebAPI 环境检测矩阵、按类别分组的环境与指纹 API 调用回放明细，精确到访问的属性、调用的方法、构造函数、getter / setter、调用参数摘要、返回值 / 回放值摘要、来源证据、补环境实现方式、真实性保护和验证结果；同时确认 `case/阶段报告/` 至少存在 `01-需求信息确认.md`，并根据实际过程与合适推进节点生成其他阶段报告。阶段报告要覆盖 Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、XHR/fetch Session Bridge、对象形状审计矩阵、WebAPI 环境检测矩阵状态、功能、Bug 修复、指纹能力、真实性保护、测试与清理等能力增量；不得只写笼统“本阶段新增 / 修改的 WebAPI”。交付前可运行 `scripts/check_stage_reports.js --case-dir case --require-dynamic-fields --markdown` 检查。只有用户明确要求不生成最终总结或阶段报告时才可跳过并记录原因。交付前必须运行 `scripts/check_change_memory.js --case-dir case --markdown`、`scripts/check_code_quality.js --case-dir case --markdown`、`scripts/check_object_shape_audit.js --case-dir case --markdown`、`scripts/check_xhr_fetch_session_bridge.js --case-dir case --markdown`（发送真实请求时加 `--require-live`，使用 curl_cffi / cffi_curl 时加 `--tls-client curl_cffi` 或实际客户端名）、`scripts/check_webapi_addon_coverage.js --case-dir case --markdown`、存在 Trace 时运行 `scripts/analyze_trace_complexity.js --case-dir case --markdown` 与 `scripts/check_trace_api_coverage.js --case-dir case --require-stage-audit --markdown`、`scripts/check_webapi_env_detection_matrix.js --case-dir case --markdown`、`scripts/check_env_realism.js --case-dir case --markdown`（addon-first 默认强制；使用 RuyiTrace、涉及 `document.all` 或涉及指纹值回放时加对应参数），再运行 `scripts/check_final_artifact.js --case-dir case --markdown` 或等价人工检查。任何一个检查失败都不得继续真实请求验证、不得交付、不得只在总结中说明风险；必须先重构或修复后复测通过。尤其 `check_xhr_fetch_session_bridge.js` 发现 XHR/fetch 仍是 fixture/mock/default 200、未桥接同一 TLS session，或 `check_object_shape_audit.js` 发现 `_` / `__` 私有状态泄露、缺少对象形状 baseline / audit，或 `check_code_quality.js` 发现 signer/probe 承载补环境主体、文件过大、中文注释不足、函数过长或压缩堆叠时，或 `check_trace_api_coverage.js` 发现 Trace 命中 P0/P1 API 未规划、计划外新增未说明原因、`missed-from-trace` 流程缺陷时，或 `check_webapi_env_detection_matrix.js` 发现 iframe / Worker / PerformanceTimeline / DOM-CSSOM / EventTarget / timer / writer 分支触发后缺少 baseline、Node audit、矩阵类别或存在阻断状态时，必须先拆分到 `src/env/` / `src/node-runtime/env/`、修正覆盖矩阵或 WebAPI 行为矩阵、补采样并复跑 Node audit，再确认代码可读性与中文注释质量、对象形状审计、XHR/fetch live session bridge、WebAPI addon 覆盖、补环境真实性、addon-first/native fallback 记录、native 能力缺口闭环、补环境框架选择记录、Trace 复杂度评估与框架选择解耦、Trace API 覆盖矩阵、WebAPI 环境检测矩阵、通用代码变更记忆、RuyiTrace 证据沉淀、指纹 fixture 与回放实现、环境与指纹 API 调用回放分类明细、中文命名最终总结、阶段报告、最终项目只有一个执行入口、入口可直接运行、整个项目无自动化工具代码、请求由已确认的 Node.js / Python TLS 指纹兼容 Session 客户端实现并在结束后销毁、无多余测试/临时产物。
+
+41a. **真实请求前统一执行 environment closure**：只要当前 case 存在 Trace、浏览器环境实现或 XHR/fetch，真实请求前必须运行 `scripts/check_environment_closure.js --case-dir case --before-real-request --markdown`；真实请求模式增加 `--require-live` 和实际 `--tls-client`。该总门禁必须包含 Trace-runtime contract/audit 深度比较、对象形状逐字段比较、WebAPI 每个类别逐 probe 比较、XHR/fetch no-send transcript 比较和运行时同 session bridge 证明。阶段报告与最终总结必须记录 `traceSourceHash`、`contractHash`、`runtimeSourceHash`、baselineId、P0/P1 mismatch 数、network transcript mismatch 数和多余 Node 请求数。任何检查只凭关键词、target 名称、空类别数组或手工 `matched` 通过时，视为门禁实现缺陷，不得交付。
 
 42. **清理策略**：每个测试命令、脚本验证或阶段结束后立即清理本步骤产生的临时 hook、trace、日志、缓存、失败下载、无用 HAR、临时截图、临时响应、空文件和空目录；不要等项目完全结束后再统一清理。最终回复前必须复查清理结果。登录态 Profile、Cookie、localStorage 按敏感材料处理，删除前必须确认用户意图。
 ## 辅助脚本
@@ -412,11 +430,60 @@ node scripts/analyze_trace_complexity.js --trace case/tmp/env-trace.jsonl --mark
 
 ```bash
 node scripts/check_trace_api_coverage.js --case-dir case --markdown
-node scripts/check_trace_api_coverage.js --case-dir case --require-stage-audit --json
+node scripts/check_trace_api_coverage.js --case-dir case --require-stage-audit --require-runtime-closure --json
 node scripts/check_trace_api_coverage.js --inventory case/notes/trace-api-inventory.json --matrix case/notes/env-coverage-matrix.md --markdown
 ```
 
 用于在存在 RuyiTrace / Node trace / Hook 环境访问日志时检查：是否已生成 `trace-api-inventory.json`、`env-coverage-matrix.md`，P0/P1 Trace 命中 API 是否都有首轮实现 / 采样 / 暂不挂载 / native 能力缺口决策，后续阶段报告中的计划外新增 WebAPI 是否说明原因。检查失败时不得进入 signer probe、不得继续新增功能、不得发送真实请求或宣称阶段验证通过。
+
+### Trace-runtime 可执行一致性检查
+
+```bash
+node scripts/build_trace_runtime_contract.js --case-dir case --baseline-id <baselineId> --markdown
+node scripts/run_trace_runtime_audit.js --case-dir case --entry case/result/final.js --markdown
+node scripts/check_trace_runtime_conformance.js --case-dir case --markdown
+```
+
+用于把原始 Trace 变成逐 API / realm / receiver / phase 的机器行为契约，并在当前 runtime 的 no-send audit-only 模式下深比 descriptor、brand、prototype、ownKeys、返回值、异常、副作用和顺序。`contractHash`、`runtimeSourceHash` 或 baseline 不一致时旧 audit 失效；P0/P1 差异未清零时不得继续。
+
+### WebAPI 环境检测矩阵检查
+
+```bash
+node scripts/check_webapi_env_detection_matrix.js --case-dir case --markdown
+node scripts/check_webapi_env_detection_matrix.js --case-dir case --require --require-writer-branch --json
+node scripts/check_webapi_env_detection_matrix.js --matrix case/notes/webapi-env-detection-matrix.md --browser-baseline case/fixtures/browser-env-detection-baseline.json --node-audit case/tmp/node-env-detection-audit.json --markdown
+```
+
+用于检查 iframe / Window realm、Worker / MessagePort task queue、PerformanceObserver / PerformanceTimeline、DOM / CSSOM、EventTarget、DataCloneError、clock / timer、writer branch 等行为是否已建立真实浏览器 baseline、Node audit 和矩阵结论。该检查补充 Trace API 覆盖矩阵：Trace 说明 API 被访问，本检查说明行为是否像浏览器。检查失败时不得继续真实请求验证、不得宣称 reload writer / form writer / final writer 分支已闭环。
+
+### 对象形状与私有状态泄露检查
+
+```bash
+node scripts/check_object_shape_audit.js --case-dir case --markdown
+node scripts/check_object_shape_audit.js --case-dir case --require --json
+node scripts/check_object_shape_audit.js --dir case/result --matrix case/notes/object-shape-audit.md --browser-baseline case/fixtures/browser-object-shape-baseline.json --node-audit case/tmp/node-object-shape-audit.json --markdown
+```
+
+用于检查浏览器可见对象是否泄露 `_` / `__` 自有属性、是否存在 `Object.defineProperty(obj, "__xxx")` / `this.__xxx` / `defineValue(obj, "_xxx")` 等私有状态泄露，以及 `Object.keys`、`Object.getOwnPropertyNames`、`Reflect.ownKeys`、descriptor、`in`、prototype walk 的真实浏览器 baseline 和 Node audit 是否闭环。检查失败时必须改用 addon / xbs private API 或模块级 `WeakMap`，不得继续真实请求验证。
+
+### XHR/fetch live session bridge 检查
+
+```bash
+node scripts/check_xhr_fetch_session_bridge.js --case-dir case --markdown
+node scripts/check_xhr_fetch_session_bridge.js --case-dir case --require-live --json
+node scripts/check_xhr_fetch_session_bridge.js --case-dir case --tls-client curl_cffi --require-live --markdown
+```
+
+用于检查 `XMLHttpRequest` / `fetch` / `Request` / `Response` / `Headers` / `sendBeacon` 是否只停留在 fixture / mock / 默认 200 诊断模式，还是已通过 live session bridge 交给最终确认的 CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet session 真实发送。用户选择 Python `curl_cffi` 时，必须检测到 Python session 持有者和 Node IPC bridge 证据；检查失败时不得宣称 TLS 指纹问题已解决。
+
+### XHR/fetch no-send 请求语义检查
+
+```bash
+node scripts/check_xhr_fetch_semantics.js --case-dir case --require --require-no-send --out case/tmp/xhr-fetch-semantics-audit.json --markdown
+node scripts/check_environment_closure.js --case-dir case --before-real-request --require-live --tls-client curl_cffi --markdown
+```
+
+用于逐条比较浏览器与 Node transcript 的请求来源、realm、navigation epoch、URL、Header 顺序、body SHA256、status/responseURL、事件顺序和 reload 后旧 realm 清理。静态 bridge 关键词、手工 `matched`、只有 Session 但请求语义不一致均不算通过。
 
 ### 补环境框架模板
 
@@ -685,11 +752,17 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 最终请求 Session 模式：一律启用；同一 session 覆盖动态资源刷新、Cookie / challenge 生成、加密参数生成前后请求和目标 API；请求成功或失败后必须销毁 session / Cookie jar / 敏感运行态
 
+- XHR/fetch 网络模式：offline-fixture（仅诊断，不发送真实网络）/ live-session-bridge（通过同一 TLS Session 真实发送）/ 未涉及；如最终客户端为 Python `curl_cffi`，Node JS runtime 必须通过 IPC bridge 使用 `final.py` 持有的同一 session
+
 - 补环境框架选择：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm，需自检 `window.xbs` 17 个核心 API、`xbs.dom.createDocument` 和 DOM smoke test） / Node.js 内置 vm / jsEnv；如未明确选择，将按“不使用补环境框架”继续；选择 isolated-vm 时若 ABI 不兼容，先询问是否通过 nvm 安装 / 切换 Node.js v26.3.1；选择 jsEnv 时需提供项目路径、入口和使用文档
 
 - Trace 复杂度评估：已有 RuyiTrace / Node trace / missing-env 等日志时，将基于日志评估复杂度、风险点和补环境优先级；复杂度评估不自动决定补环境框架
 
 - Trace API 覆盖矩阵：已有 Trace / Hook / missing-env 等日志时，进入第一版 env / signer probe 前必须生成 `case/notes/trace-api-inventory.json`、`case/notes/env-coverage-matrix.md` 和更新后的 `case/notes/missing-env-priority.md`；Trace 已命中的 P0/P1 WebAPI 必须明确首轮实现、同 baseline 采样、暂不挂载或 native 能力缺口，不能等遇错后再补
+
+- WebAPI 环境检测矩阵：如果日志、阶段报告或 diff 触发 iframe / Worker / PerformanceTimeline / DOM-CSSOM / EventTarget / DataCloneError / XHR / fetch / sendBeacon / 对象形状 / 私有状态泄露 / timer / writer 分支行为，真实请求或 final writer 判定前必须生成 `case/fixtures/browser-env-detection-baseline.json`、`case/tmp/node-env-detection-audit.json` 和 `case/notes/webapi-env-detection-matrix.md`，并通过 `check_webapi_env_detection_matrix.js`
+
+- 对象形状审计矩阵：如果补了 DOM / Event / Storage / Performance / XHR / fetch / Headers / Response / Request 等浏览器对象，必须生成 `case/fixtures/browser-object-shape-baseline.json`、`case/tmp/node-object-shape-audit.json` 和 `case/notes/object-shape-audit.md`，并确认不存在 `_` / `__` 私有状态泄露
 
 - 补环境真实性保护：默认启用 toString / 属性描述符 / 原型链 / 访问器 / 实例对象保护，默认 addon-first；addon ABI 不兼容时先询问是否通过 nvm 安装 / 切换 Node.js v25.8.2，用户拒绝后才降级；选择 xbs isolated-vm 时以 `window.xbs` native-first 表达；如需关闭必须明确说明
 
@@ -697,7 +770,7 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 通用代码变更记忆：复杂 case 默认维护 `case/notes/代码变更记忆.md`；修改关键源码前读取，修改后记录失败尝试、禁止回退、验证范围和遗留风险
 
-- 阶段报告：默认从 `case/阶段报告/01-需求信息确认.md` 开始，并在每个合适推进节点生成中文命名 Markdown；内容包含项目进展、修改文件、Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、新增功能、Bug 修复、指纹能力、测试和清理；如不需要生成必须明确说明
+- 阶段报告：默认从 `case/阶段报告/01-需求信息确认.md` 开始，并在每个合适推进节点生成中文命名 Markdown；内容包含项目进展、修改文件、Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、WebAPI 环境检测矩阵状态、新增功能、Bug 修复、指纹能力、测试和清理；如不需要生成必须明确说明
 
 - 最终总结：默认生成 `result/最终项目总结.md`，并包含按 navigator / document / window / canvas / webgl 等类别分组的环境与指纹 API 调用回放明细；如不需要生成必须明确说明
 
@@ -736,11 +809,19 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 14. 如果存在 Trace / Hook / missing-env 等环境访问证据，读取 `references/trace-api-coverage.md`，生成 `trace-api-inventory.json`、`env-coverage-matrix.md` 和更新后的 `missing-env-priority.md`，并运行 `check_trace_api_coverage.js`；检查通过后才允许进入第一版 env / signer probe。Trace 已命中的 P0/P1 API 如果尚未实现，必须先明确首轮实现文件、同 baseline 采样计划、暂不挂载原因或 native 能力缺口。
 
-15. 在正式补环境前提醒用户选择补环境框架：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv；用户未明确选择时按“不使用补环境框架”继续；选择 isolated-vm 时先自检 `window.xbs`、`xbs.dom.createDocument`、DOM smoke test 和 Node ABI；如果 ABI 不兼容，先按 nvm + Node.js v26.3.1 恢复流程询问用户，用户拒绝后才让用户提供匹配构建产物或改选框架；选择 jsEnv 时先确认安装路径、入口文件和使用文档。
+14a. 第一轮 env 完成后立即读取 `references/trace-runtime-conformance.md`，从原始 Trace 生成 `trace-runtime-contract.json`，让最终入口以 audit-only/no-send 模式运行并写出 `node-trace-runtime-audit.json`，再执行深度 diff。之后每次修改 env、切换 baseline 或刷新动态资源都必须重新运行；P0/P1 差异清零前不得进入真实请求。
 
-16. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon.node 或 xbs native 能力；addon ABI 不兼容时先按 nvm + Node.js v25.8.2 恢复流程询问用户，用户拒绝后才允许 NativeProtect / JS fallback；Node 泄露阻断必须覆盖基础 Node 能力和 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ Storage、Node `performance`、宿主网络 / 消息 Web API 兼容层，以及 `URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、Trace API 覆盖矩阵、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
+15. 如果日志、阶段报告或 diff 触发 iframe / Worker / PerformanceTimeline / DOM-CSSOM / EventTarget / DataCloneError / XHR / fetch / sendBeacon / 对象形状 / 私有状态泄露 / timer / writer 分支行为，读取 `references/webapi-env-detection-matrix.md`，生成浏览器 baseline、Node audit 和 `webapi-env-detection-matrix.md`，并运行 `check_webapi_env_detection_matrix.js`；存在阻断状态时只能补 baseline、修 Node 行为或进入 native 能力缺口闭环。
 
-17. 输出补环境前置分析结论。
+16. 如果 Trace / Hook / 目标 JS 显示会调用 XHR / fetch / sendBeacon，或最终请求依赖动态资源 / Cookie / challenge / telemetry，读取 `references/xhr-fetch-session-bridge.md`，确定 `offline-fixture` 或 `live-session-bridge` 模式；用户选择发送真实请求时，必须规划同一 TLS Session bridge，尤其 Python `curl_cffi` 场景由 `final.py` 持有 session 并服务 Node runtime 的 XHR/fetch IPC 请求。
+
+16a. 同时读取 `references/xhr-fetch-semantics-audit.md`，先采集浏览器 network transcript，再让 Node bridge 在 no-send 模式输出待发送 transcript，比较请求 actor、realm、URL、Header 顺序、body hash、status/responseURL、事件顺序和 reload realm 清理。只有语义 audit 与运行时同 session bridge audit 同时通过才允许真实请求。
+
+17. 在正式补环境前提醒用户选择补环境框架：不使用补环境框架（默认） / isolated-vm（随包魔改 xbs isolated-vm） / Node.js 内置 vm / jsEnv；用户未明确选择时按“不使用补环境框架”继续；选择 isolated-vm 时先自检 `window.xbs`、`xbs.dom.createDocument`、DOM smoke test 和 Node ABI；如果 ABI 不兼容，先按 nvm + Node.js v26.3.1 恢复流程询问用户，用户拒绝后才让用户提供匹配构建产物或改选框架；选择 jsEnv 时先确认安装路径、入口文件和使用文档。
+
+18. 执行 Node 泄露阻断、六项纯计算预检，并在进入补环境阶段第一步加载 / 记录 addon.node 或 xbs native 能力；addon ABI 不兼容时先按 nvm + Node.js v25.8.2 恢复流程询问用户，用户拒绝后才允许 NativeProtect / JS fallback；Node 泄露阻断必须覆盖基础 Node 能力和 Node 21+ `navigator`（不是 Node 20 官方新增）、Node 22.4+ Storage、Node `performance`、宿主网络 / 消息 Web API 兼容层，以及 `URL/TextEncoder/Streams/Events/crypto/WebAssembly` 等浏览器同名宿主实现；创建 / 读取 `case/notes/代码变更记忆.md`，按 addon-first、真实性保护基线、私有状态不泄露、Trace API 覆盖矩阵、WebAPI 环境检测矩阵、XHR/fetch live session bridge、通用代码变更记忆和代码可读性规范初始化 env；如果目标涉及 JSVMP，只定位环境依赖、请求链路和 writer，不主动分析 JSVMP 源码。
+
+19. 输出补环境前置分析结论。
 
 
 请确认以上信息是否正确。确认后我再继续。
@@ -779,6 +860,9 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 最终请求 Session 模式记录：session client 类型、Cookie jar 策略、请求链是否共用同一 session、结束后销毁方式。
 
+- XHR/fetch Session Bridge 记录：未涉及 / offline-fixture 仅诊断 / live-session-bridge；若选择真实请求，记录 JS XHR/fetch 是否通过同一 TLS Session 发送、Python `curl_cffi` 是否由 `final.py` 持有 session 并服务 Node IPC bridge。
+- XHR/fetch 请求语义审计记录：浏览器 / Node network transcript、baselineId、no-send 模式、runtimeSourceHash、请求 actor / realm / navigation epoch、Header 有序 diff、body length/SHA256、status=0/responseURL、事件顺序、reload 后旧 realm 清理、多余 Node 请求数和 `check_xhr_fetch_semantics.js` 结果。
+
 - 指纹基线一致性记录：`case/notes/fingerprint-baseline.json`、`baselineId`、profile / seed / 代理 / 语言 / 时区 / UA / Client Hints / screen / WebGL 是否固定，是否存在 baseline diff。
 
 - 请求样本基线优先级记录：用户提供 cURL / HAR 只用于请求结构、参数位置、可疑加密参数和业务字段线索；最终 UA / Header / Client Hints / TLS / HTTP2 / Cookie 链路 / 指纹值以已确认取证 baseline 为准；如两者冲突，是否已阻止把 cURL 冲突字段写入最终项目。
@@ -787,6 +871,11 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - Trace 复杂度评估状态：已基于日志评估 / 无可用 Trace，未评估；复杂度评估不决定框架选择。
 - Trace API 覆盖矩阵状态：已生成 `trace-api-inventory.json` / 已生成 `env-coverage-matrix.md` / 已运行 `check_trace_api_coverage.js` / 无可用 Trace 未生成；P0/P1 Trace 命中 API 是否已全部规划，是否存在 `unplanned`、`missed-from-trace` 或待补采阻塞项。
+- Trace-runtime 可执行闭环状态：`trace-runtime-contract.json`、`node-trace-runtime-audit.json`、`trace-runtime-diff.md` 的生成状态；`traceSourceHash`、`contractHash`、`runtimeSourceHash`、baselineId、probeVersion、P0/P1 matched/mismatch 数、audit-only 真实网络尝试数，以及源码变化后是否已重新审计。
+
+- WebAPI 环境检测矩阵状态：未触发 / 已生成 `case/notes/webapi-env-detection-matrix.md` / 已生成 `case/fixtures/browser-env-detection-baseline.json` / 已生成 `case/tmp/node-env-detection-audit.json` / 已运行 `check_webapi_env_detection_matrix.js`；触发类别是否包含 iframe-realm、worker-task、performance-timeline、dom-cssom、event-clone-error、xhr-fetch-session-bridge、object-shape、private-state-leakage、clock-timer、writer-branch，是否存在阻断状态。
+
+- 对象形状审计矩阵状态：未触发 / 已生成 `case/notes/object-shape-audit.md` / 已生成 `case/fixtures/browser-object-shape-baseline.json` / 已生成 `case/tmp/node-object-shape-audit.json` / 已运行 `check_object_shape_audit.js`；是否发现 `_` / `__` 私有状态泄露、额外 ownKeys、descriptor 差异或 prototype walk 差异。
 
 - 如果选择 ruyiPage + RuyiTrace：RuyiTrace NDJSON 导入状态、摘要位置、长字段截断风险、完整值补采状态和优先环境依赖结论。
 
@@ -821,6 +910,12 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 - Trace 复杂度评估摘要：复杂度等级、主要证据和补环境优先级；明确该评估不自动决定 `isolated-vm` / `vm` / `jsEnv` 使用。
 - Trace API 覆盖矩阵摘要：`trace-api-inventory.json`、`env-coverage-matrix.md` 和 `missing-env-priority.md` 的生成状态；P0/P1 Trace 命中 API 的首轮实现 / 同 baseline 采样 / 暂不挂载 / native 能力缺口决策；`check_trace_api_coverage.js` 结果；后续新增 WebAPI 是否属于计划内调整、Trace 未覆盖新分支、动态资源新分支、baseline 不一致、Trace 截断、native gap 或 `missed-from-trace` 流程缺陷。
 
+- WebAPI 环境检测矩阵摘要：`webapi-env-detection-matrix.md`、`browser-env-detection-baseline.json`、`node-env-detection-audit.json` 的生成状态；iframe / Window realm、Worker / MessagePort task queue、PerformanceObserver / PerformanceTimeline、DOM / CSSOM、EventTarget / DataCloneError、XHR / fetch session bridge、object shape、private state leakage、clock / timer、writer branch 的 matched / mismatch / needs-baseline / native-gap 状态；`check_webapi_env_detection_matrix.js` 结果；如果 Node 停在 reload writer / continuation 而真实浏览器进入 form writer，必须记录 final writer 前环境事件类别差异。
+
+- 对象形状审计矩阵摘要：`object-shape-audit.md`、`browser-object-shape-baseline.json`、`node-object-shape-audit.json` 的生成状态；`Object.keys`、`Object.getOwnPropertyNames`、`Reflect.ownKeys`、descriptor、`in`、for...in、prototype walk、`Object.prototype.toString` 和 `instanceof` 的 matched / mismatch / needs-baseline / native-gap 状态；`check_object_shape_audit.js` 结果；浏览器对象内部状态是否使用 addon / xbs private API 或 `WeakMap`，是否不存在 `_` / `__` 自有属性泄露。
+
+- XHR/fetch Session Bridge 摘要：网络模式为 `offline-fixture` / `live-session-bridge` / 未涉及；如果是真实请求，说明 JS `XMLHttpRequest` / `fetch` / `sendBeacon` 是否通过同一 TLS Session 发送，Python `curl_cffi` 场景是否由 `final.py` 持有 session 并处理 Node IPC bridge，Cookie jar / Set-Cookie / document.cookie / `getResponseHeader("set-cookie")` 语义是否同步，`check_xhr_fetch_session_bridge.js` 结果。
+
 - 缺失环境列表与补齐优先级。
 
 - Proxy 检测风险与迁移到真实对象的计划。
@@ -853,4 +948,5 @@ node scripts/clean_case.js --case-dir case --force --include-profiles --markdown
 
 - 阶段报告写入状态：本阶段 Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、新增功能、Bug 修复、指纹能力、真实性保护、测试内容、清理结果、风险与下一步计划是否已写入中文阶段报告。
 
-- 最终项目检查结果：只有一个执行入口、无多余测试/临时文件、无浏览器自动化代码、补环境代码简洁可读且中文注释 UTF-8 正常、指纹值由 Node.js 终端 API 回放实现并绑定同一 fingerprint baseline、最终请求由已确认的 Node.js / Python TLS 指纹兼容 Session 客户端实现且结束后销毁，或用户明确选择不发真实请求；若 Firefox baseline 使用 curl_cffi / curl-cffi-node，最终总结已记录 `ja3`、`akamai`、`extra_fp`、`curl_options` 对齐证据和 JA3 / JA4 / HTTP2 验收结果；最终项目未硬编码或复用 cURL / fixture 中的加密参数样本值，也未沿用与取证 baseline 冲突的 cURL UA / Client Hints / Header / TLS profile / Cookie，而是通过补环境后的目标 JS 入口 / signer 生成动态参数，并以已确认取证 baseline 组织最终请求；最终项目只包含用户确认的 runtime，未选择框架时不包含 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖，未选择 isolated-vm 时不包含 `xbs-isolated-vm/` 或 `isolated_vm.node`；如发生 native 能力缺口，最终总结已记录阻塞点、建议 API、最小测试用例和通过状态；最终总结已生成且包含高强度环境检测覆盖矩阵、环境与指纹 API 调用回放分类明细，UTF-8 中文正常，除非用户明确要求不生成。
+- 最终项目检查结果：只有一个执行入口、无多余测试/临时文件、无浏览器自动化代码、补环境代码简洁可读且中文注释 UTF-8 正常、浏览器对象无 `_` / `__` 私有状态泄露、指纹值由 Node.js 终端 API 回放实现并绑定同一 fingerprint baseline、最终请求由已确认的 Node.js / Python TLS 指纹兼容 Session 客户端实现且结束后销毁，或用户明确选择不发真实请求；若 XHR/fetch 参与参数、Cookie、challenge、动态资源或 telemetry，已通过 live session bridge 复用同一 session，offline fixture 仅作为诊断模式；若 Firefox baseline 使用 curl_cffi / curl-cffi-node，最终总结已记录 `ja3`、`akamai`、`extra_fp`、`curl_options` 对齐证据和 JA3 / JA4 / HTTP2 验收结果；最终项目未硬编码或复用 cURL / fixture 中的加密参数样本值，也未沿用与取证 baseline 冲突的 cURL UA / Client Hints / Header / TLS profile / Cookie，而是通过补环境后的目标 JS 入口 / signer 生成动态参数，并以已确认取证 baseline 组织最终请求；最终项目只包含用户确认的 runtime，未选择框架时不包含 `isolated-vm` / `vm` / `jsEnv` runtime 代码或依赖，未选择 isolated-vm 时不包含 `xbs-isolated-vm/` 或 `isolated_vm.node`；如发生 native 能力缺口，最终总结已记录阻塞点、建议 API、最小测试用例和通过状态；最终总结已生成且包含 XHR/fetch Session Bridge、对象形状审计矩阵、WebAPI 环境检测矩阵、高强度环境检测覆盖矩阵、环境与指纹 API 调用回放分类明细，UTF-8 中文正常，除非用户明确要求不生成。
+- environment closure 结果：真实请求前已运行统一总门禁；Trace-runtime P0/P1 差异为零，WebAPI / 对象形状逐 probe 深比通过，XHR/fetch no-send transcript 无多余请求且请求头/body/status/responseURL/事件顺序一致，live bridge 有同一 session 运行时证明；不存在仅靠关键词、空矩阵或手工 `matched` 通过的检查。

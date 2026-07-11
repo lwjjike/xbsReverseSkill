@@ -36,7 +36,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-- 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”“指纹基线一致性”“环境与指纹 API 调用回放明细”“高强度环境检测覆盖矩阵”章节。
+- 必须保留“阶段报告索引”“native addon / NativeProtect 使用情况”“指纹基线一致性”“环境与指纹 API 调用回放明细”“Trace-runtime 可执行闭环”“XHR/fetch Session Bridge”“XHR/fetch 请求语义审计”“对象形状审计矩阵与私有状态泄露”“WebAPI 环境检测矩阵”“高强度环境检测覆盖矩阵”章节。
 - 必须保留“动态资源保鲜与运行时刷新”“补环境框架选择与 Trace 复杂度评估”“最终请求 Session 请求链”“加密参数生成与样本复用检查”“代码质量与中文注释”“最终交付结构”“测试结果”“清理结果”章节。
 - 必须写入 `case/result/最终项目总结.md`；除非用户明确要求不生成，否则 `check_final_artifact.js` 会默认检查该中文命名文件。
 
@@ -51,6 +51,16 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - “环境与指纹 API 调用回放明细”必须按类别分组，例如 `window / global`、`navigator`、`document / DOM`、`canvas`、`webgl` 等；每条记录必须精确到访问的属性、调用的方法、构造函数或 getter / setter，不得只写“补了 navigator / canvas”。
 
 - “指纹值回放”必须记录值来源优先级执行情况：是否优先查看 Trace、Trace 是否未截断可用、Trace 缺失 / 未覆盖 / 4000 或 4096 长字段疑似截断时使用了哪个已确认取证工具补采、是否绑定同一 `baselineId`、是否存在 AI 猜值 / 默认值 / 静态推断进入最终 fixture；长指纹值必须记录完整 `valueLength`、完整 `sha256`、分片信息和 `truncated: false`。
+
+- “WebAPI 环境检测矩阵”用于记录 Trace 命中后仍可能导致分支错误的浏览器行为 diff，包括 iframe / Window realm、Worker / MessagePort task queue、PerformanceObserver / PerformanceTimeline、DOM / CSSOM、EventTarget / DataCloneError、clock / timer 和 writer branch；必须写明浏览器 baseline、Node audit、矩阵状态和阻断项。
+
+- “XHR/fetch Session Bridge”用于记录 JS 侧 `XMLHttpRequest` / `fetch` / `sendBeacon` 是 `offline-fixture` 诊断模式还是 `live-session-bridge` 真实请求模式；真实请求时必须写明是否复用同一 TLS Session、Python `curl_cffi` 是否由 `final.py` 持有 session 并服务 Node IPC bridge、Cookie / Set-Cookie / resource timing 是否同步。
+
+- “Trace-runtime 可执行闭环”用于记录原始 Trace 是否已转换为机器契约，当前 runtime 是否在 no-send audit-only 模式逐项通过，必须包含 `traceSourceHash`、`contractHash`、`runtimeSourceHash`、baselineId、probeVersion 和 P0/P1 mismatch 数。
+
+- “XHR/fetch 请求语义审计”用于记录浏览器与 Node network transcript 的逐条 diff，包括请求 actor、realm、navigation epoch、Header 顺序、body byte hash、status/responseURL、事件顺序、reload realm 清理和多余 Node 请求数。
+
+- “对象形状审计矩阵与私有状态泄露”用于记录 `Object.keys`、`Object.getOwnPropertyNames`、`Reflect.ownKeys`、descriptor、`in`、prototype walk 等对象形状 baseline / audit，以及是否存在 `_` / `__` 自有属性泄露；发现泄露时不得交付。
 
 - “高强度环境检测覆盖矩阵”用于记录异常模式、toString 多通道、DataCloneError、Error stack、属性枚举、原型链、MutationObserver、userAgentData、window.chrome、媒体能力、网络 Header / Client Hints 一致性、动态 JS 多版本回归等是否涉及、是否采样、是否已修复和遗留风险。高强度通用排查文档 `high-strength-browser-detection.md` 的入口页优先、指纹随机化风险、自动化痕迹、TLS / Header / Session 一致性和失败排查顺序也必须体现在本矩阵中。
 
@@ -497,7 +507,110 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 15. 高强度环境检测覆盖矩阵
+## 14a. Trace-runtime 可执行闭环
+
+- Trace contract：`case/notes/trace-runtime-contract.json` / 未生成，原因：
+- Node runtime audit：`case/tmp/node-trace-runtime-audit.json` / 未生成，原因：
+- diff：`case/notes/trace-runtime-diff.md` / 未生成，原因：
+- baselineId：
+- traceSourceHash：
+- contractHash：
+- runtimeSourceHash：
+- probeVersion：
+- audit-only 网络模式：no-send / 未执行
+- audit-only 真实网络尝试数：
+- P0/P1 contract 数 / matched / mismatch：
+- `check_trace_runtime_conformance.js` 结果：
+- `check_trace_api_coverage.js --require-runtime-closure` 结果：
+
+## 15. XHR/fetch Session Bridge
+
+- 是否涉及 XHR/fetch/sendBeacon：是 / 否，原因：
+- 网络模式：offline-fixture / live-session-bridge / 未涉及
+- 如果为 offline-fixture：是否已明确只用于诊断，且未宣称真实请求 / TLS 指纹已解决：是 / 否
+- 如果为 live-session-bridge：是否复用最终请求同一 Session：是 / 否
+- Session 持有者：final.js / final.py / 不适用
+- TLS 客户端：CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet / 不发真实请求
+- Python curl_cffi 场景：final.py 是否持有唯一 session 并服务 Node IPC bridge：是 / 否 / 不适用
+- JS 网络模块：`result/src/env/network/xhr.js` / `result/src/env/network/fetch.js` / 其他 / 未涉及
+- 请求客户端模块：`result/src/request/client.js` / `result/src/request/session_client.py` / 其他 / 未涉及
+- Cookie / Set-Cookie / document.cookie 同步：
+- `getResponseHeader("set-cookie")` / `Response.headers.get("set-cookie")` 语义：
+- readyState / Promise / event 顺序验证：
+- resource timing 是否涉及：
+- `check_xhr_fetch_session_bridge.js` 结果：通过 / 未通过 / 未运行，原因：
+
+## 15a. XHR/fetch 请求语义审计
+
+- 浏览器 transcript：`case/fixtures/browser-network-transcript.ndjson` / 未生成，原因：
+- Node no-send transcript：`case/tmp/node-network-transcript.ndjson` / 未生成，原因：
+- 语义 audit：`case/tmp/xhr-fetch-semantics-audit.json` / 未生成，原因：
+- baselineId：
+- runtimeSourceHash：
+- 请求 actor / realm / navigation epoch：
+- Header 顺序与重复字段 diff：
+- body byte length / SHA256 diff：
+- status=0 / responseURL 语义：
+- readyState / event / Promise 顺序：
+- reload/navigation 后旧 realm timer/XHR/task 清理：
+- Node 多余 XHR/fetch/navigation/resource 事件数：
+- `check_xhr_fetch_semantics.js` 结果：
+- `check_environment_closure.js --before-real-request` 结果：
+
+## 16. 对象形状审计矩阵与私有状态泄露
+
+- 是否触发对象形状审计：是 / 否，原因：
+- 矩阵文件：`case/notes/object-shape-audit.md` / 未生成，原因：
+- 浏览器对象形状 baseline：`case/fixtures/browser-object-shape-baseline.json` / 未生成，原因：
+- Node 对象形状 audit：`case/tmp/node-object-shape-audit.json` / 未生成，原因：
+- baselineId 一致性：一致 / 不一致 / 未涉及
+- 私有状态实现：addon/xbs private API / WeakMap / native / 未涉及
+- `_` / `__` 自有属性泄露：无 / 有，具体项：
+- `Object.keys` / `Object.getOwnPropertyNames` / `Reflect.ownKeys` / descriptor / `in` / prototype walk 结果：
+- `check_object_shape_audit.js` 结果：通过 / 未通过 / 未运行，原因：
+
+| 对象 | 是否涉及 | 浏览器 baseline | Node audit | 状态 | 私有状态策略 | 遗留风险 |
+|---|---|---|---|---|---|---|
+| XMLHttpRequest instance | 未涉及 / 已涉及 | 已采样 / 未采样 | 已审计 / 未审计 | matched / mismatch / unknown | WeakMap / private API |  |
+| Headers / Response / Request | 未涉及 / 已涉及 | 已采样 / 未采样 | 已审计 / 未审计 | matched / mismatch / unknown | WeakMap / private API |  |
+| DOM / EventTarget / Storage / Performance | 未涉及 / 已涉及 | 已采样 / 未采样 | 已审计 / 未审计 | matched / mismatch / unknown | WeakMap / private API |  |
+
+## 17. WebAPI 环境检测矩阵
+
+
+- 是否触发 WebAPI 环境检测矩阵：是 / 否，原因：
+
+- 矩阵文件：`case/notes/webapi-env-detection-matrix.md` / 未生成，原因：
+
+- 浏览器行为基线：`case/fixtures/browser-env-detection-baseline.json` / 未生成，原因：
+
+- Node 行为审计：`case/tmp/node-env-detection-audit.json` / 未生成，原因：
+
+- `check_webapi_env_detection_matrix.js` 结果：通过 / 未通过 / 未运行，原因：
+
+- baselineId 一致性：一致 / 不一致 / 未涉及，说明：
+
+- writer 分支差异：未涉及 / 真实浏览器 = continuation / reload writer / form writer / final writer；Node = continuation / reload writer / form writer / final writer；差异说明：
+
+| 类别 | 是否触发 | 浏览器 baseline | Node audit | 状态 | 证据位置 | 处理结论 |
+|---|---|---|---|---|---|---|
+| iframe-realm | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| worker-task | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| performance-timeline | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| dom-cssom | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| event-clone-error | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| xhr-fetch-session-bridge | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| object-shape | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| private-state-leakage | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| clock-timer | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+| writer-branch | 否 / 是 | 已采样 / 未采样 | 已审计 / 未审计 | matched / accepted-diff / not-involved / needs-browser-baseline / needs-node-audit / mismatch / native-capability-gap / unknown |  |  |
+
+- 阻断状态：无 / 有，具体项：
+
+- 后续新增 WebAPI 是否属于矩阵遗漏：否 / 是，若是必须记录 `missed-from-webapi-env-matrix` 流程缺陷和修复动作：
+
+
+## 18. 高强度环境检测覆盖矩阵
 
 
 
@@ -538,7 +651,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 16. 指纹值回放
+## 19. 指纹值回放
 
 
 
@@ -566,14 +679,14 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 17. 加密参数生成与样本复用检查
+## 20. 加密参数生成与样本复用检查
 
 - cURL / HAR / fixture 中的样本加密值是否只作为 expected：
 - 最终入口如何生成参数：目标 JS 入口 / signer / 其他
 - 是否发现硬编码样本值：否
 - `check_final_artifact.js` 复用检查结果：
 
-## 18. 代码质量与中文注释
+## 21. 代码质量与中文注释
 
 - 是否已运行 `check_code_quality.js`：
 - 模块拆分情况：
@@ -585,7 +698,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - 中文注释是否包含问号、连续问号或乱码：否
 - 修复过的可读性问题：
 
-## 19. TLS 请求验证与 Session 请求链
+## 22. TLS 请求验证与 Session 请求链
 
 
 
@@ -617,7 +730,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 20. 最终交付结构
+## 23. 最终交付结构
 
 
 
@@ -639,7 +752,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 21. 测试结果
+## 24. 测试结果
 
 
 
@@ -651,6 +764,12 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 - UTF-8 Markdown / 默认最终总结生成测试：
 
 - 补环境真实性检查：
+
+- XHR/fetch Session Bridge 检查：
+
+- 对象形状审计与私有状态泄露检查：
+
+- WebAPI 环境检测矩阵检查：
 
 - 高强度环境检测覆盖矩阵检查：
 
@@ -664,7 +783,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 22. 清理结果
+## 25. 清理结果
 
 
 
@@ -678,7 +797,7 @@ node scripts/write_markdown_utf8.js --input case/tmp/最终项目总结草稿.md
 
 
 
-## 23. 风险与后续建议
+## 26. 风险与后续建议
 
 
 

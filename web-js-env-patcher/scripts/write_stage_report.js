@@ -236,19 +236,94 @@ function renderDynamicReport(stage, data) {
     { title: '修改原因', keys: ['reason', 'why'] },
     { title: '影响范围', keys: ['impact', 'scope'] },
   ], '无修改文件'));
-  lines.push('', '## 4. 本阶段新增 / 修改的 WebAPI', '');
-  lines.push(...tableLines(data.webApis || data.webAPIs || data.apis, [
+  lines.push('', '## 4. Trace 计划内首轮实现 / 调整的 WebAPI', '');
+  lines.push(...tableLines(data.traceWebApis || data.plannedWebApis || data.webApis || data.webAPIs || data.apis, [
     { title: 'WebAPI', keys: ['api', 'webApi', 'name'] },
     { title: '挂载位置', keys: ['mount', 'mountPoint', 'location'] },
     { title: '类型', keys: ['type', 'kind'] },
     { title: '实现方式', keys: ['implementation', 'impl', 'strategy'] },
     { title: '是否 addon-first', keys: ['addonFirst', 'addon', 'addon_first'] },
+    { title: 'Trace 矩阵状态', keys: ['traceStatus', 'matrixStatus', 'status'] },
     { title: '证据来源', keys: ['evidence', 'source'] },
     { title: '测试结果', keys: ['test', 'result', 'testResult'] },
-  ], '无新增或修改 WebAPI'));
-  lines.push('', '## 5. 本阶段新增功能', '');
+  ], '无 Trace 计划内 WebAPI 调整'));
+  lines.push('', '## 4a. 计划外新增 WebAPI 与原因', '');
+  lines.push(...tableLines(data.unplannedWebApis || data.unplannedAPIs || data.unplannedApis, [
+    { title: 'WebAPI', keys: ['api', 'webApi', 'name'] },
+    { title: '新增原因', keys: ['reason', 'cause'] },
+    { title: '为什么未在 Trace 覆盖矩阵首轮处理', keys: ['whyMissed', 'missedReason'] },
+    { title: '证据', keys: ['evidence', 'source'] },
+    { title: '处理结果', keys: ['result', 'handling'] },
+  ], '无计划外新增 WebAPI'));
+  const traceRuntime = data.traceRuntimeClosure || data.traceRuntime || {};
+  lines.push('', '## 4b. Trace-runtime 可执行闭环', '');
+  if (typeof traceRuntime === 'object' && !Array.isArray(traceRuntime)) {
+    lines.push(`- contract：${safeString(firstValue(traceRuntime, ['contract', 'contractFile']))}`);
+    lines.push(`- Node audit：${safeString(firstValue(traceRuntime, ['nodeAudit', 'audit']))}`);
+    lines.push(`- traceSourceHash：${safeString(firstValue(traceRuntime, ['traceSourceHash']))}`);
+    lines.push(`- contractHash：${safeString(firstValue(traceRuntime, ['contractHash']))}`);
+    lines.push(`- runtimeSourceHash：${safeString(firstValue(traceRuntime, ['runtimeSourceHash']))}`);
+    lines.push(`- baselineId：${safeString(firstValue(traceRuntime, ['baselineId']))}`);
+    lines.push(`- P0/P1 mismatch：${safeString(firstValue(traceRuntime, ['blockingMismatches', 'mismatches']))}`);
+    lines.push(`- audit-only 真实网络尝试：${safeString(firstValue(traceRuntime, ['networkAttempts']))}`);
+    lines.push(`- 检查结果：${safeString(firstValue(traceRuntime, ['checkResult', 'result']))}`);
+  } else {
+    lines.push(...bulletLines(traceRuntime, '无 Trace'));
+  }
+  const xhrBridge = data.xhrFetchBridge || data.networkBridge || {};
+  lines.push('', '## 5. XHR/fetch Session Bridge', '');
+  if (typeof xhrBridge === 'object' && !Array.isArray(xhrBridge)) {
+    lines.push(`- 网络模式：${safeString(firstValue(xhrBridge, ['mode', 'networkMode'], '未涉及'))}`);
+    lines.push(`- Session 持有者：${safeString(firstValue(xhrBridge, ['sessionOwner', 'owner']))}`);
+    lines.push(`- TLS 客户端：${safeString(firstValue(xhrBridge, ['tlsClient', 'client']))}`);
+    lines.push(`- JS bridge 文件：${safeString(firstValue(xhrBridge, ['bridgeFile', 'jsBridgeFile']))}`);
+    lines.push(`- Cookie / Set-Cookie 同步：${safeString(firstValue(xhrBridge, ['cookieSync', 'cookies']))}`);
+    lines.push(`- 检查结果：${safeString(firstValue(xhrBridge, ['checkResult', 'result']))}`);
+  } else {
+    lines.push(...bulletLines(xhrBridge, '未涉及'));
+  }
+  const xhrSemantics = data.xhrFetchSemantics || data.xhrSemantics || data.networkSemantics || {};
+  lines.push('', '## 5a. XHR/fetch 请求语义审计', '');
+  if (typeof xhrSemantics === 'object' && !Array.isArray(xhrSemantics)) {
+    lines.push(`- 浏览器 transcript：${safeString(firstValue(xhrSemantics, ['browserTranscript', 'browser']))}`);
+    lines.push(`- Node transcript：${safeString(firstValue(xhrSemantics, ['nodeTranscript', 'node']))}`);
+    lines.push(`- no-send 模式：${safeString(firstValue(xhrSemantics, ['networkMode', 'mode']))}`);
+    lines.push(`- runtimeSourceHash：${safeString(firstValue(xhrSemantics, ['runtimeSourceHash']))}`);
+    lines.push(`- Header/body mismatch：${safeString(firstValue(xhrSemantics, ['requestMismatches', 'mismatches']))}`);
+    lines.push(`- 多余 Node 请求：${safeString(firstValue(xhrSemantics, ['extraNodeEvents', 'extraRequests']))}`);
+    lines.push(`- status=0 / responseURL：${safeString(firstValue(xhrSemantics, ['failureSemantics', 'statusResponseUrl']))}`);
+    lines.push(`- reload realm 清理：${safeString(firstValue(xhrSemantics, ['realmCleanup', 'reloadCleanup']))}`);
+    lines.push(`- 检查结果：${safeString(firstValue(xhrSemantics, ['checkResult', 'result']))}`);
+  } else {
+    lines.push(...bulletLines(xhrSemantics, '未涉及'));
+  }
+  const webapiMatrix = data.webapiEnvMatrix || data.webApiEnvMatrix || data.webapiMatrix || {};
+  lines.push('', '## 5b. WebAPI 环境检测矩阵', '');
+  if (typeof webapiMatrix === 'object' && !Array.isArray(webapiMatrix)) {
+    lines.push(`- 矩阵文件：${safeString(firstValue(webapiMatrix, ['matrix', 'matrixFile']))}`);
+    lines.push(`- 浏览器 baseline：${safeString(firstValue(webapiMatrix, ['browserBaseline', 'baseline']))}`);
+    lines.push(`- Node audit：${safeString(firstValue(webapiMatrix, ['nodeAudit', 'audit']))}`);
+    lines.push(`- baselineId：${safeString(firstValue(webapiMatrix, ['baselineId']))}`);
+    lines.push(`- 触发类别：${safeString(firstValue(webapiMatrix, ['categories', 'triggered']))}`);
+    lines.push(`- 阻断项：${safeString(firstValue(webapiMatrix, ['blockers', 'blocking']))}`);
+  } else {
+    lines.push(...bulletLines(webapiMatrix, '未触发'));
+  }
+  const objectShape = data.objectShapeAudit || data.shapeAudit || {};
+  lines.push('', '## 5c. 对象形状审计矩阵', '');
+  if (typeof objectShape === 'object' && !Array.isArray(objectShape)) {
+    lines.push(`- 矩阵文件：${safeString(firstValue(objectShape, ['matrix', 'matrixFile']))}`);
+    lines.push(`- 浏览器 baseline：${safeString(firstValue(objectShape, ['browserBaseline', 'baseline']))}`);
+    lines.push(`- Node audit：${safeString(firstValue(objectShape, ['nodeAudit', 'audit']))}`);
+    lines.push(`- 私有状态实现：${safeString(firstValue(objectShape, ['privateState', 'stateStrategy']))}`);
+    lines.push(`- _ / __ 自有属性泄露：${safeString(firstValue(objectShape, ['privateLeakage', 'leakage']))}`);
+    lines.push(`- 检查结果：${safeString(firstValue(objectShape, ['checkResult', 'result']))}`);
+  } else {
+    lines.push(...bulletLines(objectShape, '未触发'));
+  }
+  lines.push('', '## 6. 本阶段新增功能', '');
   lines.push(...bulletLines(data.features || data.newFeatures, '无新增功能'));
-  lines.push('', '## 6. 本阶段修复的 Bug', '');
+  lines.push('', '## 7. 本阶段修复的 Bug', '');
   lines.push(...tableLines(data.bugs || data.bugFixes || data.fixes, [
     { title: 'Bug', keys: ['bug', 'title', 'issue'] },
     { title: '原因', keys: ['reason', 'cause'] },
@@ -257,7 +332,7 @@ function renderDynamicReport(stage, data) {
     { title: '验证结果', keys: ['test', 'result', 'validation'] },
     { title: '防回退记录', keys: ['memory', 'changeMemory', 'note'] },
   ], '无 Bug 修复'));
-  lines.push('', '## 7. 本阶段新增 / 修改的指纹能力', '');
+  lines.push('', '## 8. 本阶段新增 / 修改的指纹能力', '');
   lines.push(...tableLines(data.fingerprints || data.fingerprintCapabilities, [
     { title: '指纹类型', keys: ['type', 'fingerprintType'] },
     { title: 'API', keys: ['api', 'apis'] },
@@ -266,7 +341,7 @@ function renderDynamicReport(stage, data) {
     { title: '回放方式', keys: ['replay', 'replayMode'] },
     { title: '风险', keys: ['risk', 'risks'] },
   ], '无指纹能力变化'));
-  lines.push('', '## 8. 真实性保护变化', '');
+  lines.push('', '## 9. 真实性保护变化', '');
   if (typeof protection === 'object' && !Array.isArray(protection)) {
     lines.push(`- 函数 toString 保护：${safeString(firstValue(protection, ['functionToString', 'funcToString', 'function']))}`);
     lines.push(`- 访问器 toString 保护：${safeString(firstValue(protection, ['accessorToString', 'accessor']))}`);
@@ -279,14 +354,14 @@ function renderDynamicReport(stage, data) {
   } else {
     lines.push(...bulletLines(protection, '无真实性保护变化'));
   }
-  lines.push('', '## 9. 本阶段测试内容与结果', '');
+  lines.push('', '## 10. 本阶段测试内容与结果', '');
   lines.push(...tableLines(data.tests || data.validations, [
     { title: '测试项', keys: ['name', 'test', 'item'] },
     { title: '命令 / 方法', keys: ['command', 'method', 'cmd'] },
     { title: '结果', keys: ['result', 'status'] },
     { title: '备注', keys: ['note', 'remark'] },
   ], '无测试记录'));
-  lines.push('', '## 10. 清理情况', '');
+  lines.push('', '## 11. 清理情况', '');
   if (typeof cleanup === 'object' && !Array.isArray(cleanup)) {
     lines.push(`- 已清理：${safeString(cleanup.removed || cleanup.cleaned)}`);
     lines.push(`- 保留证据：${safeString(cleanup.kept || cleanup.evidence)}`);
@@ -294,11 +369,11 @@ function renderDynamicReport(stage, data) {
   } else {
     lines.push(...bulletLines(cleanup, '未记录清理情况'));
   }
-  lines.push('', '## 11. 风险与遗留问题', '');
+  lines.push('', '## 12. 风险与遗留问题', '');
   lines.push(...bulletLines(data.risks || data.leftoverRisks, '无'));
   if (data.uncoveredSamples) lines.push(`- 未覆盖样本：${safeString(data.uncoveredSamples)}`);
   if (data.needUserConfirm) lines.push(`- 需要用户确认：${safeString(data.needUserConfirm)}`);
-  lines.push('', '## 12. 下一步计划', '');
+  lines.push('', '## 13. 下一步计划', '');
   lines.push(...numberedLines(data.nextSteps, '待补充'));
   return lines.join('\n') + '\n';
 }

@@ -478,6 +478,7 @@ function renderMarkdown(result) {
     '- 必须有中文职责注释，中文注释不得包含问号、连续问号或乱码。',
     '- 禁止压缩代码、过度堆叠语句、调试断点和临时测试标记。',
     '- signer / probe / runtime 入口不得承载 navigator、document、canvas、webgl、performance 等多域 WebAPI 补环境主体。',
+    '- XHR/fetch 实现应拆入 env/network 并通过 live session bridge；浏览器对象私有状态不得以 _ / __ own property 泄露。',
     '- isolated-vm 补环境不得以大段 String.raw / *_SCRIPT 字符串作为主要交付形态，必须拆成真实文件模块并通过 runFile/runFiles 注入。',
     '',
   ];

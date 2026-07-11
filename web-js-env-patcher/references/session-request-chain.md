@@ -17,6 +17,7 @@
 
 - 最终请求一律使用 Session 模式；即使当前看起来只有一个目标 API，也必须创建 session client。
 - 前置请求、动态 HTML / JS / challenge 刷新、Cookie / token / 设备参数生成链路、加密参数生成前后的请求、目标 API 请求必须复用同一 session。
+- 目标 JS 内部触发的 `XMLHttpRequest` / `fetch` / `sendBeacon` 如果参与动态资源、Cookie、challenge、telemetry、resource timing 或 writer 分支，也必须通过 live session bridge 复用同一 session；不得由 Node 宿主 `fetch` 或 fixture/mock 代替真实发送。
 - 同一 session 内保持一致的 Cookie jar、UA、Client Hints、Accept-Language、Referer、Origin、Header 顺序、代理 / IP、TLS 指纹客户端和指纹基线。
 - 不得在最终入口中用无状态 `fetch`、`axios`、`requests.request` 或临时单次客户端直接发送真实请求。
 - 请求成功、失败或异常退出后都必须销毁 session，关闭底层客户端，并清理 Cookie jar、敏感 header、token、临时响应和运行态缓存。
@@ -102,7 +103,7 @@ def close_request_session(session):
 1. 读取本地配置和脱敏请求样本。
 2. 创建 session client。
 3. 在同一 session 中刷新动态资源 / challenge / seed。
-4. 在同一 session 状态下调用补环境后的目标 JS 入口生成加密参数。
+4. 在同一 session 状态下调用补环境后的目标 JS 入口生成加密参数；目标 JS 内部 XHR/fetch 如需网络访问，通过 live session bridge 回到同一 session。
 5. 在同一 session 中发送目标 API 请求。
 6. 输出脱敏结果和业务成功判断。
 7. `finally` 中销毁 session 并清理敏感运行态。
@@ -113,6 +114,7 @@ def close_request_session(session):
 
 - Session client 类型：CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet / 不发真实请求。
 - 请求链：动态资源刷新、Cookie / challenge 生成、目标 API 请求是否在同一 session。
+- XHR/fetch Session Bridge：未涉及 / offline-fixture 仅诊断 / live-session-bridge；若使用 Python curl_cffi，说明 `final.py` 是否持有唯一 session 并服务 Node IPC bridge。
 - Cookie jar 来源、更新点和是否已脱敏。
 - 是否复用同一 UA / Client Hints / locale / timezone / proxy / 指纹基线。
 - 用户 cURL 样本与取证 baseline 是否冲突，Session 是否已按取证 baseline 重建 Header / UA / Client Hints / TLS / HTTP2 / Cookie jar。

@@ -3,6 +3,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { check: checkRuntimeConformance } = require('./check_trace_runtime_conformance');
 
 const ALLOWED_STATUSES = new Set([
   'planned-first-pass',
@@ -21,6 +22,9 @@ function parseArgs(argv) {
     caseDir: '',
     inventory: '',
     matrix: '',
+    contract: '',
+    nodeAudit: '',
+    requireRuntimeClosure: false,
     requireStageAudit: false,
     json: false,
     markdown: false,
@@ -31,6 +35,9 @@ function parseArgs(argv) {
     if (a === '--case-dir' || a === '--dir' || a === '-d') args.caseDir = argv[++i] || '';
     else if (a === '--inventory') args.inventory = argv[++i] || '';
     else if (a === '--matrix') args.matrix = argv[++i] || '';
+    else if (a === '--contract') args.contract = argv[++i] || '';
+    else if (a === '--node-audit') args.nodeAudit = argv[++i] || '';
+    else if (a === '--require-runtime-closure') args.requireRuntimeClosure = true;
     else if (a === '--require-stage-audit') args.requireStageAudit = true;
     else if (a === '--json') args.json = true;
     else if (a === '--markdown') args.markdown = true;
@@ -44,10 +51,10 @@ function parseArgs(argv) {
 function usage() {
   return `用法：
   node scripts/check_trace_api_coverage.js --case-dir case --markdown
-  node scripts/check_trace_api_coverage.js --case-dir case --require-stage-audit --json
+  node scripts/check_trace_api_coverage.js --case-dir case --require-stage-audit --require-runtime-closure --json
   node scripts/check_trace_api_coverage.js --inventory case/notes/trace-api-inventory.json --matrix case/notes/env-coverage-matrix.md --markdown
 
-说明：检查 Trace API inventory、env coverage matrix，以及后续阶段报告中计划外新增 WebAPI 是否说明原因。`;
+说明：检查 Trace API inventory、env coverage matrix、实现文件和 Trace-runtime 行为闭环，以及后续阶段报告中计划外新增 WebAPI 是否说明原因。`;
 }
 
 function exists(p) {
@@ -82,6 +89,11 @@ function normalizeInventory(raw) {
   if (raw.inventory && Array.isArray(raw.inventory.apis)) return raw.inventory.apis;
   if (raw.apiInventory && Array.isArray(raw.apiInventory)) return raw.apiInventory;
   return [];
+}
+
+function implementationPath(caseDir, file) {
+  if (!file) return '';
+  return path.isAbsolute(file) ? file : path.resolve(caseDir, file);
 }
 
 function listMarkdown(dir) {
@@ -145,6 +157,8 @@ function check(args) {
   const notesDir = path.join(caseDir, 'notes');
   const inventoryPath = path.resolve(args.inventory || path.join(notesDir, 'trace-api-inventory.json'));
   const matrixPath = path.resolve(args.matrix || path.join(notesDir, 'env-coverage-matrix.md'));
+  const contractPath = path.resolve(args.contract || path.join(notesDir, 'trace-runtime-contract.json'));
+  const nodeAuditPath = path.resolve(args.nodeAudit || path.join(caseDir, 'tmp', 'node-trace-runtime-audit.json'));
   const problems = [];
   const warnings = [];
   const traceDetected = hasTraceEvidence(caseDir);
@@ -177,7 +191,8 @@ function check(args) {
     const reason = String(item.reason || item.decisionReason || '').trim();
     const implementationFile = String(item.implementationFile || item.file || '').trim();
     const samplingRequired = Boolean(item.samplingRequired || status === 'needs-baseline-sampling');
-    const result = { api, priority, status, reason, implementationFile, samplingRequired, clean: true, problems: [] };
+    const resolvedImplementationFile = implementationPath(caseDir, implementationFile);
+    const result = { api, priority, status, reason, implementationFile, resolvedImplementationFile, samplingRequired, clean: true, problems: [] };
 
     if (!status || status === 'unplanned') {
       result.problems.push('缺少实现状态或状态为 unplanned');
@@ -186,6 +201,12 @@ function check(args) {
     }
     if (PRIORITIES_REQUIRING_DECISION.has(priority) && status === 'planned-first-pass' && !implementationFile) {
       result.problems.push('P0/P1 首轮实现项缺少 implementationFile');
+    }
+    if (status === 'implemented-first-pass' && (!implementationFile || !exists(resolvedImplementationFile))) {
+      result.problems.push(`implemented-first-pass 对应实现文件不存在：${implementationFile || '未记录'}`);
+    }
+    if (args.requireRuntimeClosure && PRIORITIES_REQUIRING_DECISION.has(priority) && status === 'planned-first-pass') {
+      result.problems.push('进入 runtime closure 阶段后 P0/P1 不得仍为 planned-first-pass');
     }
     if (['needs-baseline-sampling', 'deferred-not-mounted', 'native-capability-gap', 'missed-from-trace', 'live-discovered'].includes(status) && !reason) {
       result.problems.push(`${status} 必须写明 reason`);
@@ -213,11 +234,38 @@ function check(args) {
   const stageFindings = args.requireStageAudit ? auditStageReports(caseDir) : [];
   for (const finding of stageFindings) problems.push(`${finding.file}：${finding.problem}`);
 
+  let runtimeConformance = null;
+  if (args.requireRuntimeClosure) {
+    runtimeConformance = checkRuntimeConformance({
+      caseDir,
+      contract: contractPath,
+      nodeAudit: nodeAuditPath,
+      strictP2: false,
+    });
+    for (const problem of runtimeConformance.problems) problems.push(`Trace-runtime：${problem}`);
+    const inventoryApis = new Set(apiResults.map(item => item.api));
+    if (exists(contractPath)) {
+      try {
+        const contractRaw = readJson(contractPath);
+        const contractItems = normalizeInventory({ apis: contractRaw.contracts || [] });
+        const missingFromInventory = [...new Set(contractItems.map(item => item.api || item.path || item.name).filter(Boolean))]
+          .filter(api => !inventoryApis.has(api));
+        if (missingFromInventory.length) {
+          problems.push(`trace-api-inventory.json 缺少 runtime contract 中的 API：${missingFromInventory.slice(0, 50).join('、')}`);
+        }
+      } catch (err) {
+        problems.push(`无法核对 runtime contract 与 inventory：${err.message}`);
+      }
+    }
+  }
+
   return {
     caseDir,
     traceDetected,
     inventoryPath,
     matrixPath,
+    contractPath,
+    nodeAuditPath,
     inventoryMeta,
     clean: problems.length === 0,
     problems,
@@ -226,6 +274,7 @@ function check(args) {
     apiResults,
     matrixMissing,
     stageFindings,
+    runtimeConformance,
   };
 }
 
@@ -237,6 +286,8 @@ function renderMarkdown(result) {
     `检测到 Trace 证据：${result.traceDetected ? '是' : '否'}`,
     `inventory：${result.inventoryPath}`,
     `matrix：${result.matrixPath}`,
+    `runtime contract：${result.contractPath}`,
+    `Node runtime audit：${result.nodeAuditPath}`,
     `是否通过：${result.clean ? '是' : '否'}`,
     '',
     '## Inventory 摘要',
@@ -262,6 +313,12 @@ function renderMarkdown(result) {
   if (result.stageFindings.length) {
     lines.push('', '## 阶段报告问题');
     for (const item of result.stageFindings) lines.push(`- ${item.file}：${item.problem}`);
+  }
+  if (result.runtimeConformance) {
+    lines.push('', '## Trace-runtime 闭环');
+    lines.push(`- 是否通过：${result.runtimeConformance.clean ? '是' : '否'}`);
+    lines.push(`- 契约项：${result.runtimeConformance.summary.contractCount ?? 0}`);
+    lines.push(`- 阻断差异：${result.runtimeConformance.summary.blockingMismatches ?? 0}`);
   }
   if (result.problems.length) {
     lines.push('', '## 问题');

@@ -27,6 +27,11 @@ const DYNAMIC_REQUIRED_SECTIONS = [
   '本阶段修改文件',
   'Trace 计划内首轮实现 / 调整的 WebAPI',
   '计划外新增 WebAPI 与原因',
+  'Trace-runtime 可执行闭环',
+  'XHR/fetch Session Bridge',
+  'XHR/fetch 请求语义审计',
+  'WebAPI 环境检测矩阵',
+  '对象形状审计矩阵',
   '本阶段新增功能',
   '本阶段修复的 Bug',
   '本阶段新增 / 修改的指纹能力',
@@ -40,6 +45,11 @@ const DYNAMIC_REQUIRED_SECTIONS = [
 const CAPABILITY_SECTIONS = [
   'Trace 计划内首轮实现 / 调整的 WebAPI',
   '计划外新增 WebAPI 与原因',
+  'Trace-runtime 可执行闭环',
+  'XHR/fetch Session Bridge',
+  'XHR/fetch 请求语义审计',
+  'WebAPI 环境检测矩阵',
+  '对象形状审计矩阵',
   '本阶段新增功能',
   '本阶段修复的 Bug',
   '本阶段新增 / 修改的指纹能力',
@@ -71,7 +81,7 @@ function usage() {
   node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐阶段报告 --require-dynamic-fields --markdown
   node scripts/check_stage_reports.js --case-dir case --require-stage 需求信息确认 --require-stage 请求样本与可疑参数确认 --json
 
-说明：检查阶段报告是否使用中文文件名、UTF-8 编码，并确认必要阶段报告存在。使用 --require-dynamic-fields 时会校验动态阶段报告是否包含 Trace 计划内 WebAPI、计划外新增 WebAPI 原因、功能、Bug、指纹、测试、清理和风险等章节。`;
+说明：检查阶段报告是否使用中文文件名、UTF-8 编码，并确认必要阶段报告存在。使用 --require-dynamic-fields 时会校验动态阶段报告是否包含 Trace 计划内 WebAPI、计划外新增原因、Trace-runtime 可执行闭环、XHR/fetch Session Bridge、XHR/fetch 请求语义审计、WebAPI 环境检测矩阵、对象形状审计矩阵、功能、Bug、指纹、测试、清理和风险等章节。`;
 }
 function exists(p) { try { fs.accessSync(p); return true; } catch { return false; } }
 function stat(p) { try { return fs.statSync(p); } catch { return null; } }

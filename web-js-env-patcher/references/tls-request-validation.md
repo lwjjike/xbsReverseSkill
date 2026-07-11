@@ -8,6 +8,7 @@
 - 只做低频、最小化请求，优先复现用户已提供的成功 cURL / HAR。
 - TLS 指纹兼容只解决普通 HTTP 客户端与浏览器在 TLS ClientHello、ALPN、HTTP/2、JA3/JA4、Cronet / curl-impersonate 网络栈上的差异；不能替代登录态、验证码、一次性 token、设备校验或业务授权。
 - 最终真实请求必须写入一体化 `final.js` 或 `final.py`，由 Node.js / Python TLS 指纹兼容 Session 客户端直接发起；不得生成加密参数后再使用 ruyiPage、Playwright、Puppeteer、Selenium、CloakBrowser 或其他浏览器自动化验证。
+- 如果目标 JS 运行时调用 `XMLHttpRequest` / `fetch` / `sendBeacon` 访问动态资源、Cookie、challenge、telemetry 或目标接口，JS 侧网络 API 也必须通过同一 TLS 指纹兼容 Session 的 live session bridge 发送；fixture/mock/default 200 只能作为离线诊断，不能作为 TLS 验证。
 
 ## 前置阶段必须选择客户端
 
@@ -324,17 +325,18 @@ def send_request(url, method="GET", headers=None, body=None):
 
 1. 前置阶段确认最终请求客户端和是否已安装。
 2. 确认 fixtures 已通过，Node.js 生成参数与浏览器样本一致。
-3. 读取用户提供的成功 cURL / HAR，不凭空构造请求。
-4. 脱敏保存请求样本；真实 Cookie / token 只保存在本地，不写入最终报告。
-5. 使用已确认的 CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet 创建 session client，并在同一 session 中仅发起少量验证请求；若用户选择“不发真实请求”，则只输出本地 sign / 参数。
-6. 对比：
+3. 若目标 JS 依赖 XHR/fetch 网络访问，先按 `xhr-fetch-session-bridge.md` 建立 live session bridge，并确认 Cookie jar / Set-Cookie / resource timing 同步。
+4. 读取用户提供的成功 cURL / HAR，不凭空构造请求。
+5. 脱敏保存请求样本；真实 Cookie / token 只保存在本地，不写入最终报告。
+6. 使用已确认的 CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet 创建 session client，并在同一 session 中仅发起少量验证请求；若用户选择“不发真实请求”，则只输出本地 sign / 参数。
+7. 对比：
    - HTTP 状态码。
    - 响应 JSON 中关键字段。
    - 服务端是否接受新生成的加密参数。
    - 是否出现风控 / 验证码 / 登录失效。
-7. 写入 `notes/final-request-validation.md`。
-8. 在 `finally` 中销毁 session，清理 Cookie jar、临时响应、日志和敏感请求副本。
-9. 将最终请求逻辑整合进 `result/final.js` 或 `result/final.py`，并运行 `check_final_artifact.js` 确认不包含浏览器自动化代码和多余产物。
+8. 写入 `notes/final-request-validation.md`。
+9. 在 `finally` 中销毁 session，清理 Cookie jar、临时响应、日志和敏感请求副本。
+10. 将最终请求逻辑整合进 `result/final.js` 或 `result/final.py`，并运行 `check_xhr_fetch_session_bridge.js` 与 `check_final_artifact.js` 确认不包含浏览器自动化代码和多余产物。
 
 ## 输出模板
 
@@ -347,6 +349,7 @@ def send_request(url, method="GET", headers=None, body=None):
 - 客户端安装状态：已安装 / 未安装改选 / 未安装不发请求
 - Session 模式：已创建 session / 不发真实请求
 - 请求链是否复用同一 session：是 / 否，原因：
+- XHR/fetch Session Bridge：未涉及 / offline-fixture / live-session-bridge；如使用 Python curl_cffi，是否由 final.py 持有同一 session 并服务 Node IPC：
 - Session 销毁方式：close / exit / dispose / Cookie jar 清理 / 不适用
 - 最终项目入口：final.js / final.py
 - 是否包含浏览器自动化代码：否

@@ -98,16 +98,22 @@
 7. **普通 WebAPI 函数必须 addon-first**  
    不要在 WebAPI 主路径中直接写 `ctx.Blob = function(){}`、`ctx.indexedDB = { open() {} }`、`prototype = { getContext() {} }` 或 `ctx.URL.createObjectURL = function(){}`。普通函数也要提取为具名函数，并通过 addon-first helper 包装后再安装 descriptor。addon 不可用时才用 `NativeProtect` / JS fallback，并在注释与阶段报告中说明原因。
 
-8. **构造函数错误必须可追溯**  
+8. **浏览器对象私有状态不得泄露**  
+   不要在浏览器可见对象上写 `this.__readyState`、`this._headers`、`__children`、`__parentNode`、`__responseHeaders`、`_store` 等内部字段。non-enumerable 也会被 `Object.getOwnPropertyNames`、`Reflect.ownKeys` 和 descriptor 检测到。内部状态优先使用 addon / xbs private API，其次使用模块级 `WeakMap`；XHR、fetch、Headers、Response、DOM 节点、EventTarget、Storage、Performance 等都适用。
+
+9. **XHR/fetch 必须拆为网络环境模块并桥接 Session**  
+   `XMLHttpRequest` / `fetch` / `Request` / `Response` / `Headers` / `sendBeacon` 的浏览器语义放在 `src/env/network/` 或 `src/node-runtime/env/network/`。需要真实请求时，网络模块只能调用 live session bridge；不得在 env 里直接调用 Node 宿主 `fetch`、`http`、`https`、`axios`、`undici`。fixture/default response 只能保留为 `offline-fixture` 诊断模式。
+
+10. **构造函数错误必须可追溯**  
    构造函数的报错类型和 message 必须来自目标浏览器采样。不要写泛化 `throw new TypeError('Illegal constructor')`；需要在注释、fixture 或阶段报告中说明该错误来自哪个浏览器、哪个调用方式。
 
-9. **addon 实例不再二次标记对象类型**  
+11. **addon 实例不再二次标记对象类型**  
    `markObjectType` 不是批准 API。addon 构造函数 / `createProtoChains` 实例工厂创建出的实例本身应已处理 `Object.prototype.toString`；只有 JS fallback 普通对象才允许 `markObjectToString` / `Symbol.toStringTag`，并必须写明 fallback 原因。
 
-10. **注释说明“为什么”和“来源”**  
+12. **注释说明“为什么”和“来源”**  
    注释不是逐行翻译代码，而是说明模块职责、浏览器样本来源、RuyiTrace 证据、fixture 匹配规则、addon-first 决策和 fallback 原因。
 
-11. **isolated-vm 也必须文件化模块交付**  
+13. **isolated-vm 也必须文件化模块交付**  
    isolated-vm 底层确实需要把源码字符串交给 V8，但最终项目不得把补环境源码写成大段 `String.raw`、`CORE_SCRIPT`、`BROWSER_OBJECTS_SCRIPT`、`*_SCRIPT` 聚合字符串。正确做法是把 `navigator.js`、`document.js`、`window.js`、`canvas.js`、`webgl.js` 等作为真实源码文件保存，由宿主侧 runtime 使用 `fs.readFileSync` 读取，再通过 `compileScriptSync(source, { filename })` 或等价方法注入同一个 isolated-vm Context。只有少量 bootstrap 片段允许字符串形式，且必须少于 40 行、不能承载主要 WebAPI 实现，并写明原因。
 
 ## 中文注释要求
@@ -189,6 +195,11 @@ function installEnv(runtime, config) {
 
 ```bash
 node scripts/check_code_quality.js --case-dir case --markdown
+node scripts/check_object_shape_audit.js --case-dir case --markdown
+node scripts/check_xhr_fetch_session_bridge.js --case-dir case --markdown
+node scripts/check_trace_runtime_conformance.js --case-dir case --markdown
+node scripts/check_xhr_fetch_semantics.js --case-dir case --require --require-no-send --out case/tmp/xhr-fetch-semantics-audit.json --markdown
+node scripts/check_environment_closure.js --case-dir case --before-real-request --markdown
 node scripts/check_webapi_addon_coverage.js --case-dir case --markdown
 node scripts/check_env_realism.js --case-dir case --markdown
 node scripts/check_final_artifact.js --case-dir case --markdown
@@ -213,4 +224,7 @@ node scripts/check_final_artifact.js --case-dir case --markdown
 | `markObjectType` | 删除该调用；addon 实例不需要二次标记，JS fallback 才用 `markObjectToString` 并记录原因 |
 | `prototype = {}` | 改为 `createProtoChains` 或 `Object.defineProperties`，保留 `constructor` 和 `Symbol.toStringTag` |
 | 直接复用宿主 Web API | 按浏览器样本和目标调用范围重建可控实现，不盲目透传 Node 宿主对象 |
+| `this.__readyState` / `_headers` / `_store` | 改用 addon / xbs private API 或模块级 WeakMap |
+| XHR/fetch 返回默认 200 / fixture | 标为 offline-fixture；真实请求时改为 live session bridge |
+| Python curl_cffi 最终请求但 Node XHR 自己发请求 | 改为 final.py 持有同一 Session，Node 通过 IPC 请求 Python 发送 |
 | target bundle 混入手写代码 | 原始 bundle 放 `src/target/original/`，入口包装放 `src/target/entry.js` |

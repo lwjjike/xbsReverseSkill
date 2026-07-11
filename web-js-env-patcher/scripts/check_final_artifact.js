@@ -36,7 +36,7 @@ function usage() {
   node scripts/check_final_artifact.js --case-dir case --no-require-final-summary --markdown
   node scripts/check_final_artifact.js --case-dir case --file case/result/final.js --json
 
-说明：检查最终交付项目是否是规范目录、只有一个执行入口、无浏览器自动化代码，并确认入口链路最终由已确认的 TLS 指纹兼容 Node.js / Python Session 请求客户端发起少量模拟请求，或明确不发真实请求；同时检查是否硬编码 / 复用了 cURL 或 fixture 中的样本加密参数值。最终总结 result/最终项目总结.md 是默认硬性要求，且必须包含按类别分组的环境与指纹 API 调用回放明细和高强度环境检测覆盖矩阵；只有用户明确要求不生成最终总结时，才允许传入 --no-require-final-summary 并在阶段输出中记录原因。`;
+说明：检查最终交付项目是否是规范目录、只有一个执行入口、无浏览器自动化代码，并确认入口链路最终由已确认的 TLS 指纹兼容 Node.js / Python Session 请求客户端发起少量模拟请求，或明确不发真实请求；同时检查是否硬编码 / 复用了 cURL 或 fixture 中的样本加密参数值。最终总结 result/最终项目总结.md 是默认硬性要求，且必须包含 Trace-runtime 可执行闭环、XHR/fetch Session Bridge、XHR/fetch 请求语义审计、对象形状审计矩阵、WebAPI 环境检测矩阵和高强度环境检测覆盖矩阵；只有用户明确要求不生成最终总结时，才允许传入 --no-require-final-summary 并在阶段输出中记录原因。`;
 }
 
 function exists(p) {
@@ -374,6 +374,11 @@ const FINAL_SUMMARY_REQUIRED_SECTIONS = [
   /阶段报告索引/,
   /native addon\s*\/\s*NativeProtect 使用情况/i,
   /环境与指纹\s*API\s*调用回放明细/i,
+  /Trace-runtime 可执行闭环/i,
+  /XHR\/fetch Session Bridge/i,
+  /XHR\/fetch 请求语义审计/i,
+  /对象形状审计矩阵与私有状态泄露/,
+  /WebAPI 环境检测矩阵/,
   /高强度环境检测覆盖矩阵/,
   /加密参数生成与样本复用检查/,
   /代码质量与中文注释/,
@@ -420,7 +425,7 @@ function inspectFinalSummary(resultDir, requireFinalSummary) {
     if (!pattern.test(text)) result.missingSections.push(pattern.toString());
   }
   if (result.missingSections.length) {
-    problems.push(`最终总结缺少必要章节：${result.missingSections.join('、')}。项目完成后的总结必须包含 native addon / NativeProtect 使用情况、指纹基线一致性、环境与指纹 API 调用回放明细、高强度环境检测覆盖矩阵、最终请求 Session 请求链、加密参数生成与样本复用检查、代码质量与中文注释、最终交付结构、测试结果和清理结果。`);
+    problems.push(`最终总结缺少必要章节：${result.missingSections.join('、')}。项目完成后的总结必须包含 native addon / NativeProtect 使用情况、指纹基线一致性、环境与指纹 API 调用回放明细、Trace-runtime 可执行闭环、XHR/fetch Session Bridge、XHR/fetch 请求语义审计、对象形状审计矩阵与私有状态泄露、WebAPI 环境检测矩阵、高强度环境检测覆盖矩阵、最终请求 Session 请求链、加密参数生成与样本复用检查、代码质量与中文注释、最终交付结构、测试结果和清理结果。`);
   }
   if (!/^#\s+/.test(text.trim())) warnings.push('最终总结建议以一级标题开头。');
   return { result, problems, warnings };
@@ -571,7 +576,7 @@ function renderMarkdown(result) {
     `- 是否使用 Session 模式并具备销毁逻辑：${result.problems.some(p => p.includes('Session 模式')) ? '否' : '是'}`,
     `- 是否不含指纹采样 Hook / Node.js 渲染库：${result.problems.some(p => p.includes('指纹采样 Hook') || p.includes('渲染库')) ? '否' : '是'}`,
     `- 是否未复用 cURL / fixture 中的加密参数样本值：${result.reusedCryptoCheck.reused.length || result.reusedCryptoCheck.hardcoded.length ? '否' : '是'}`,
-    `- 是否已生成中文命名最终总结且包含 API 调用回放明细和高强度检测矩阵：${result.finalSummary.required ? (result.finalSummary.present && !result.finalSummary.mojibakeSuspected && !result.finalSummary.missingSections.length ? '是' : '否') : (result.finalSummaryOptOut ? '用户明确豁免' : '未强制检查')}`,
+    `- 是否已生成中文命名最终总结且包含 API 调用回放明细、Trace-runtime 闭环、XHR/fetch Session Bridge、请求语义审计、对象形状审计矩阵、WebAPI 环境检测矩阵和高强度检测矩阵：${result.finalSummary.required ? (result.finalSummary.present && !result.finalSummary.mojibakeSuspected && !result.finalSummary.missingSections.length ? '是' : '否') : (result.finalSummaryOptOut ? '用户明确豁免' : '未强制检查')}`,
     `- result 目录是否无临时 / 测试产物：${result.problems.some(p => p.includes('临时') || p.includes('测试')) ? '否' : '是'}`,
     '',
     '## 样本加密参数复用检查',

@@ -8,7 +8,7 @@
 - 阶段报告统一写入 `case/阶段报告/`，最终总结统一写入 `case/result/最终项目总结.md`。
 - Markdown 内容必须 UTF-8 写入；不要使用未指定编码的 shell 重定向写中文。
 - 每个合适推进节点结束后立即写入或更新对应阶段报告，不要等项目完成后一次性补写；“合适推进节点”由执行者根据实际任务判断，不局限于固定流程阶段。
-- 阶段报告既要写阶段结论、用户确认信息、证据摘要和下一步计划，也要写 Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、补环境功能、指纹能力、Bug 修复、测试结果和清理状态；不要写入明文 Cookie、Authorization、账号、手机号、完整 token、完整 localStorage 等敏感内容。
+- 阶段报告既要写阶段结论、用户确认信息、证据摘要和下一步计划，也要写 Trace 计划内首轮实现 / 调整的 WebAPI、计划外新增 WebAPI 与原因、WebAPI 环境检测矩阵状态、补环境功能、指纹能力、Bug 修复、测试结果和清理状态；不要写入明文 Cookie、Authorization、账号、手机号、完整 token、完整 localStorage 等敏感内容。
 - 阶段报告可以记录临时证据路径，但必须标注“临时证据 / 已清理 / 需用户确认保留”，不要把临时 hook、trace、HAR、截图、Profile 当成最终交付物。
 - 如果用户明确要求不生成阶段报告，必须在对话和最终总结中记录该豁免；否则默认生成。
 
@@ -33,6 +33,9 @@
 
 - 完成一轮明确修改后，例如更新 Skill 流程、脚本、参考文档、addon helper、env 模块、signer 或 request 客户端。
 - 新增、迁移或重构一批 WebAPI 后，例如新增 `Navigator`、`Document`、`Location`、`Storage`、`Canvas`、`WebGL` 等对象或方法；报告必须说明这些 WebAPI 是 Trace 覆盖矩阵中的计划内首轮实现 / 调整，还是 Trace 未覆盖、动态资源新分支、baseline 不一致、Trace 截断、native 能力缺口或前置矩阵遗漏导致的计划外新增。
+- 新增或调整 `XMLHttpRequest`、`fetch`、`Request`、`Response`、`Headers`、`navigator.sendBeacon` 后，报告必须说明网络模式是 `offline-fixture` 还是 `live-session-bridge`，真实请求是否复用同一 TLS Session，Python `curl_cffi` 场景是否由 `final.py` 持有 session 并服务 Node IPC bridge。
+- 新增或调整任何浏览器对象内部状态后，报告必须说明对象形状审计状态、`_` / `__` 自有属性泄露检查结果，以及内部状态使用 addon / xbs private API 还是 WeakMap。
+- 新增或调整 iframe、Worker、PerformanceObserver、DOM/CSSOM、EventTarget、MessagePort、`structuredClone`、timer、writer 分支相关行为后，报告必须说明 `webapi-env-detection-matrix.md` 是否已更新，浏览器 baseline / Node audit 是否存在，哪些检测项仍阻断真实请求。
 - 新增或调整指纹能力后，例如 Canvas / WebGL / WebGPU / Audio / 字体 / DOM 几何的真实值采样与回放，并记录是否绑定同一 `baselineId`。
 - 固化或变更 fingerprint baseline 后，例如创建 `case/notes/fingerprint-baseline.json`、发现 baseline diff、切换代理 / profile / 工具。
 - 建立或调整最终请求 Session 请求链后，例如改为同一 session 刷新动态资源、生成 Cookie / challenge、发送目标 API 并销毁 session。
@@ -185,12 +188,73 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 |---|---|---|---|---|
 | 无 | - | - | - | - |
 
+## 4b. Trace-runtime 可执行闭环
+
+- contract：case/notes/trace-runtime-contract.json / 未生成，原因：
+- Node audit：case/tmp/node-trace-runtime-audit.json / 未生成，原因：
+- traceSourceHash：
+- contractHash：
+- runtimeSourceHash：
+- baselineId：
+- P0/P1 matched / mismatch：
+- audit-only 真实网络尝试数：
+- 检查结果：`check_trace_runtime_conformance.js` 通过 / 未通过 / 未运行，原因：
+
+## 4c. XHR/fetch Session Bridge
+
+- 网络模式：offline-fixture / live-session-bridge / 未涉及
+- Session 持有者：final.js / final.py / 未涉及
+- TLS 客户端：CycleTLS / impers / curl-cffi-node / curl_cffi / cffi_curl / cyCronet / 不发真实请求
+- JS bridge 文件：
+- Cookie / Set-Cookie 同步：
+- readyState / Promise / event 顺序：
+- 检查结果：`check_xhr_fetch_session_bridge.js` 通过 / 未通过 / 未运行，原因：
+
+## 4d. XHR/fetch 请求语义审计
+
+- 浏览器 transcript：case/fixtures/browser-network-transcript.ndjson / 未生成，原因：
+- Node no-send transcript：case/tmp/node-network-transcript.ndjson / 未生成，原因：
+- runtimeSourceHash：
+- Header/body mismatch：
+- status=0 / responseURL：
+- readyState / event / Promise 顺序：
+- reload 后旧 realm 清理：
+- 多余 Node 请求数：
+- 检查结果：`check_xhr_fetch_semantics.js` 通过 / 未通过 / 未运行，原因：
+
+## 4e. 对象形状审计矩阵
+
+- 矩阵文件：case/notes/object-shape-audit.md / 未触发，原因：
+- 浏览器 baseline：case/fixtures/browser-object-shape-baseline.json / 未生成，原因：
+- Node audit：case/tmp/node-object-shape-audit.json / 未生成，原因：
+- 私有状态实现：addon/xbs private API / WeakMap / native / 未涉及
+- `_` / `__` 自有属性泄露：无 / 列表
+- 阻断项：无 / 列表
+
+| 对象 | Probe | 浏览器证据 | Node 证据 | 状态 | 处理 |
+|---|---|---|---|---|---|
+| 未涉及 | - | - | - | not-involved | - |
+
 ## 5. 本阶段新增功能
 
 - 新增功能：
 - 功能入口：
 - 使用方式：
 - 对最终产物的影响：
+
+## 5a. WebAPI 环境检测矩阵
+
+- 矩阵文件：case/notes/webapi-env-detection-matrix.md / 未触发，原因：
+- 浏览器 baseline：case/fixtures/browser-env-detection-baseline.json / 未生成，原因：
+- Node audit：case/tmp/node-env-detection-audit.json / 未生成，原因：
+- baselineId：
+- 触发类别：iframe-realm / worker-task / performance-timeline / dom-cssom / event-clone-error / xhr-fetch-session-bridge / object-shape / private-state-leakage / clock-timer / writer-branch / 未涉及
+- 阻断项：无 / 列表
+- writer 分支：真实浏览器 = ；Node = 
+
+| 类别 | 检测项 | 浏览器证据 | Node 证据 | 状态 | 处理 |
+|---|---|---|---|---|---|
+| 未涉及 | - | - | - | not-involved | - |
 
 ## 6. 本阶段修复的 Bug
 
@@ -251,6 +315,6 @@ node scripts/check_stage_reports.js --case-dir case --require-stage WebAPI补齐
 ## 最终总结与阶段报告关系
 
 - 阶段报告记录“当时的状态”和“阶段性结论”，允许出现待确认项。
-- 动态阶段报告还要记录“本阶段能力增量”，包括 Trace 计划内 WebAPI 实现 / 调整、计划外新增 WebAPI 与原因、功能、指纹、Bug 修复、真实性保护和测试结果。
+- 动态阶段报告还要记录“本阶段能力增量”，包括 Trace 计划内 WebAPI 实现 / 调整、计划外新增 WebAPI 与原因、Trace-runtime 可执行闭环、XHR/fetch 请求语义审计、功能、指纹、Bug 修复、真实性保护和测试结果。
 - `result/最终项目总结.md` 记录最终结论，必须引用阶段报告中的关键决策，但不要重复粘贴所有中间日志。
 - 最终交付检查时，应确认 `case/阶段报告/` 中至少存在 `01-需求信息确认.md`，并确认文件名和内容均为 UTF-8 中文正常显示。

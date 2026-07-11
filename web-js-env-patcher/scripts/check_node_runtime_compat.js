@@ -7,7 +7,7 @@ const os = require('os');
 const TARGETS = {
   addon: {
     label: 'native addon.node',
-    version: '25.8.1',
+    version: '25.8.2',
     nextCheck: 'node scripts/load_native_addon.js --json',
   },
   'isolated-vm': {
@@ -42,7 +42,7 @@ function usage() {
     '用法：',
     '  node scripts/check_node_runtime_compat.js --target addon --markdown',
     '  node scripts/check_node_runtime_compat.js --target isolated-vm --json',
-    '  node scripts/check_node_runtime_compat.js --required-version 25.8.1 --markdown',
+    '  node scripts/check_node_runtime_compat.js --required-version 25.8.2 --markdown',
     '',
     '说明：只检测当前 Node / ABI / nvm 可用性并输出中文恢复建议，不会安装或切换 Node。',
   ].join('\n');

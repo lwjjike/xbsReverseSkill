@@ -81,6 +81,7 @@ function uniq(arr) {
 const CATEGORY_PATTERNS = [
   ['navigator', /\bnavigator\b|Navigator\.prototype|userAgent|webdriver|plugins|mimeTypes|hardwareConcurrency|deviceMemory/ig],
   ['document', /\bdocument\b|Document\.prototype|document\.cookie|querySelector|createElement|getElementById|documentElement|document\.all/ig],
+  ['iframe-realm', /iframe|contentWindow|contentDocument|defaultView|srcdoc|document\.write|document\.close/ig],
   ['location', /\blocation\b|Location\.prototype|href|origin|hostname|pathname|search|hash/ig],
   ['screen', /\bscreen\b|Screen\.prototype|availWidth|availHeight|colorDepth|pixelDepth|orientation/ig],
   ['storage', /localStorage|sessionStorage|Storage\.prototype|getItem|setItem|removeItem/ig],
@@ -92,11 +93,19 @@ const CATEGORY_PATTERNS = [
   ['webgpu', /navigator\.gpu|GPUAdapter|requestAdapter|webgpu/ig],
   ['audio', /AudioContext|OfflineAudioContext|AnalyserNode|startRendering|getChannelData/ig],
   ['dom-geometry', /getBoundingClientRect|DOMRect|offsetWidth|offsetHeight|clientWidth|clientHeight|getClientRects/ig],
+  ['dom-cssom', /DOMParser|innerHTML|HTMLUnknownElement|HTMLTextAreaElement|HTMLOptionElement|HTMLSelectElement|HTMLCollection|ShadowRoot|CSSStyleSheet|CSSStyleRule|CSSRuleList|getComputedStyle/ig],
   ['worker', /\bWorker\b|importScripts|postMessage|MessageChannel|MessagePort|BroadcastChannel/ig],
   ['wasm', /WebAssembly|instantiateStreaming|compileStreaming|\.wasm/ig],
   ['network', /\bfetch\b|XMLHttpRequest|Request\.prototype|Response\.prototype|Headers\.prototype|sendBeacon/ig],
+  ['xhr-fetch-session-bridge', /live-session-bridge|offline-fixture|XMLHttpRequest|fetch|sendBeacon|curl_cffi|curl-cffi|CycleTLS|impers/ig],
+  ['object-shape', /Object\.keys|Object\.getOwnPropertyNames|Object\.getOwnPropertyDescriptor|Object\.getOwnPropertySymbols|Reflect\.ownKeys|hasOwnProperty|propertyIsEnumerable|brand check|prototype walk/ig],
+  ['private-state-leakage', /__readyState|__headers|__children|__parentNode|__responseHeaders|Object\.defineProperty\s*\([^)]*['"]_{1,2}[A-Za-z]|\bthis\s*\.\s*_{1,2}[A-Za-z]/ig],
   ['indexedDB', /indexedDB|IDBFactory|IDBRequest|IDBOpenDBRequest|IDBKeyRange|IDBDatabase/ig],
   ['history', /\bhistory\b|pushState|replaceState|popstate|referrer/ig],
+  ['event-clone-error', /EventTarget|structuredClone|DataCloneError|ownKeys|ownNames|Reflect\.ownKeys|getOwnPropertyNames/ig],
+  ['clock-timer', /Date\.now|performance\.now|setTimeout|clearTimeout|queueMicrotask|requestAnimationFrame/ig],
+  ['writer-branch', /reload writer|form writer|final writer|HTMLFormElement\.submit|Location\.reload|cf-chl-gen|cf-chl-out|generatedForm/ig],
+  ['performance-timeline', /PerformanceObserver|PerformanceResourceTiming|PerformanceEntry|PerformanceObserverEntryList|getEntries|PerformancePaintTiming|performance\.mark/ig],
 ];
 
 const REALISM_PATTERNS = [
@@ -197,8 +206,23 @@ function scoreSummary(summary) {
   const hitCategories = Object.entries(summary.categories).filter(([, count]) => count > 0).map(([name]) => name);
   const hitRealism = Object.entries(summary.realism).filter(([, count]) => count > 0).map(([name]) => name);
   const hitAsync = Object.entries(summary.async).filter(([, count]) => count > 0).map(([name]) => name);
-  const fingerprintHits = ['canvas', 'webgl', 'webgpu', 'audio', 'dom-geometry'].filter(name => summary.categories[name] > 0);
-  const stateHits = ['storage', 'cookie', 'indexedDB', 'history', 'performance-time', 'crypto'].filter(name => summary.categories[name] > 0);
+  const fingerprintHits = ['canvas', 'webgl', 'webgpu', 'audio', 'dom-geometry', 'dom-cssom'].filter(name => summary.categories[name] > 0);
+  const stateHits = ['storage', 'cookie', 'indexedDB', 'history', 'performance-time', 'performance-timeline', 'crypto', 'clock-timer'].filter(name => summary.categories[name] > 0);
+  const envMatrixHitMap = [
+    ['iframe-realm', 'iframe-realm'],
+    ['worker', 'worker-task'],
+    ['performance-timeline', 'performance-timeline'],
+    ['dom-cssom', 'dom-cssom'],
+    ['event-clone-error', 'event-clone-error'],
+    ['xhr-fetch-session-bridge', 'xhr-fetch-session-bridge'],
+    ['object-shape', 'object-shape'],
+    ['private-state-leakage', 'private-state-leakage'],
+    ['clock-timer', 'clock-timer'],
+    ['writer-branch', 'writer-branch'],
+  ];
+  const envMatrixHits = envMatrixHitMap
+    .filter(([source]) => summary.categories[source] > 0)
+    .map(([, id]) => id);
 
   let score = 0;
   score += hitCategories.length * 2;
@@ -206,6 +230,7 @@ function scoreSummary(summary) {
   score += fingerprintHits.length * 4;
   score += hitAsync.length * 2;
   score += stateHits.length * 2;
+  score += envMatrixHits.length * 3;
   if (summary.stackSignals.size >= 10) score += 6;
   else if (summary.stackSignals.size >= 3) score += 3;
 
@@ -223,6 +248,7 @@ function scoreSummary(summary) {
     hitAsync,
     fingerprintHits,
     stateHits,
+    envMatrixHits,
     stackSignalCount: summary.stackSignals.size,
   };
 }
@@ -276,6 +302,7 @@ function analyze(args) {
       hitAsync: score.hitAsync,
       fingerprintHits: score.fingerprintHits,
       stateHits: score.stateHits,
+      envMatrixHits: score.envMatrixHits,
       stackSignalCount: score.stackSignalCount,
     },
     conclusion: {
@@ -317,6 +344,7 @@ function renderMarkdown(result) {
   lines.push(`- 指纹 API：${result.signals.fingerprintHits.join('、') || '无明显命中'}`);
   lines.push(`- 异步链路：${result.signals.hitAsync.join('、') || '无明显命中'}`);
   lines.push(`- 状态依赖：${result.signals.stateHits.join('、') || '无明显命中'}`);
+  lines.push(`- WebAPI 环境检测矩阵触发类：${result.signals.envMatrixHits.join('、') || '无明显命中'}`);
   lines.push(`- 调用栈分散信号数：${result.signals.stackSignalCount}`);
   lines.push('');
 

@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const ADDON_COMPATIBLE_NODE_VERSION = '25.8.1';
+const ADDON_COMPATIBLE_NODE_VERSION = '25.8.2';
 
 const REQUIRED_EXPORTS = [
   'createNativeObject',
