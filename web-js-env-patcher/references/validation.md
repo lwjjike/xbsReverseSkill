@@ -2341,3 +2341,116 @@ node scripts/check_environment_closure.js --case-dir case --before-real-request 
 - 任一子检查失败时总检查必须非零退出，不得因为其余检查通过而放行真实请求。
 - 输出必须记录每个子检查的状态、阻断原因及 `traceSourceHash`、`contractHash`、`runtimeSourceHash`、baselineId、P0/P1 mismatch、network mismatch、extra Node request 数。
 - 所有子检查使用当前源码与当前 baseline 的机器生成证据通过后，才允许进入真实请求。
+
+## 测试 136：WebAPI 同名 probe 只有 status/evidence 必须失败
+
+输入场景：browser baseline 与 Node audit 使用相同类别和 probe 名称，均填写 `status: matched` 与证据文件路径，但没有 `observation/observed/result/value/output/expected`。
+
+执行：
+
+```bash
+node scripts/check_webapi_env_detection_matrix.js --case-dir case --require --json
+```
+
+期望：
+
+- 检查失败，明确指出证据文本不能替代实际行为观测。
+- browser/Node 都缺结果时也不得按“结构相同”通过。
+- 缺少或不一致的 `probeSuiteVersion`、`probeSourceFile`、`probeSourceHash` 必须阻断；声明 hash 与 case 内实际 probe 源文件不一致也必须失败。
+
+## 测试 137：iframe / Worker 复用主 Realm 构造器或公开对象必须失败
+
+输入场景：iframe 或 Worker 直接复用主环境的 `Object/Function/Array/Promise/Event/EventTarget/URL/Blob/Headers/Request/Response/XMLHttpRequest`，或复用主 `navigator/performance/crypto/storage/fetch/timer` wrapper。
+
+期望：
+
+- `iframe-realm` 必须覆盖 global relations、ECMAScript/WebAPI constructor isolation、object isolation、document relations 和 navigation lifecycle。
+- `worker-task` 必须覆盖 Worker-only/Window-only global surface、constructor/object isolation。
+- `frame.self/window/globalThis/frames`、`parent/top`、`contentWindow/contentDocument/defaultView/frameElement` 关系错误时阻断。
+- 共享底层同源 Cookie/Storage/Session 不得被误写成共享公开 wrapper。
+
+## 测试 138：Worker terminate 与 MessagePort 双端生命周期必须逐组合检测
+
+输入场景：Worker 只实现 `terminate()` 标记，pending timer/message 仍可派发；MessagePort 只检查 peer closed，不检查 sender closed、receiver closed、start、消息入队后 close 或 transfer。
+
+期望：
+
+- `worker-terminate-immediate` 与 `worker-terminate-deferred` 均必须有 browser/Node observation。
+- sender close、receiver close、双方 close、入队后 close、`start()`、隐式 start、transfer 后原端口失效均必须覆盖。
+- 任一缺失 capability、顺序差异或 close 后仍派发均阻断。
+
+## 测试 139：DOM CRUD、合法 selector、Comment 与集合活性必须一致
+
+输入场景：Node 把合法 `div > span` 当作非法选择器抛 `SyntaxError`，HTML parser 丢弃 Comment，`childNodes/children/getElementsBy*` 与 `querySelectorAll` 都实现为同一种静态数组，或 mutation 后 parent/sibling/ownerDocument/isConnected 不更新。
+
+期望：
+
+- `dom-selector-validity` 证明合法 selector 不抛错，非法 selector 按浏览器抛错。
+- `dom-html-parsing` 保留 Comment/Text/Element 及正确原型。
+- `dom-live-collections` 区分 live collection 与 static NodeList。
+- tree mutation、DocumentFragment 展开、clone/import/adopt、MutationObserver record 与时序不一致时阻断。
+
+## 测试 140：双方同时缺失 XHR 字段或 Header 值为空必须失败
+
+输入场景：browser/Node transcript 的事件名称和 pairKey 完全相同，但都缺少 URL、body SHA-256、responseURL、responseHeaders，或 Header 只有名称且 value 为 `""`。
+
+执行：
+
+```bash
+node scripts/check_xhr_fetch_semantics.js --case-dir case --require --require-no-send --json
+```
+
+期望：
+
+- `network-transcript/v3` 缺失、meta provenance 不完整或 `networkAttempts` 未明确为 0 时失败。
+- 缺失字段不得被默认值归一化后判 matched。
+- Header 必须有真实值或 `{redacted,length,sha256}`；空值直接失败。
+- POST/body 请求必须比较 contentType、byte length、SHA-256；响应必须比较 status/statusText/responseURL/response headers/body hash/lifecycle。
+
+## 测试 141：Trace 状态事件顺序不同必须失败
+
+输入场景：browser Trace 的折叠时间线为 `XHR.open → XHR.send → reload → old-realm-cancel`，Node audit 为 `XHR.open → reload → XHR.send → old-realm-cancel`，但逐 API observation 和调用次数相同。
+
+执行：
+
+```bash
+node scripts/check_trace_runtime_conformance.js --case-dir case --json
+```
+
+期望：
+
+- `trace-runtime-contract/v3` 与 `node-trace-runtime-audit/v3` 的 timeline hash 不同，检查失败。
+- 对 observation sequence 排序、只比较数量或从分组 observations 反推时间线均不能通过。
+- Node audit 必须声明 timeline 来自原始 runtime event timeline。
+
+## 测试 142：多份历史 Trace 不得自动拼成一条时间线
+
+输入场景：`case/ruyi-trace/logs/` 中存在两份来自不同阶段或不同 navigation 的 Trace，调用 build 命令时没有显式 `--trace`。
+
+执行：
+
+```bash
+node scripts/build_trace_runtime_contract.js --case-dir case --baseline-id baseline-a --json
+```
+
+期望：
+
+- 构建失败并要求显式选择当前 baseline 的完整 Trace。
+- 重复 `--trace` 传入多文件分片时，只有所有状态事件具有跨文件唯一全局 sequence 才允许合并。
+- 不得按文件名或文件遍历顺序静默串联历史采集。
+
+## 测试 143：阶段报告或 Trace 已出现网络/Realm/DOM 信号时 closure 必须主动触发
+
+输入场景：`result/` 暂时没有明显 XHR 文件名，但阶段报告、Trace、notes 或已有 transcript 已出现 XHR/fetch、iframe/Worker/MessagePort、DOM CRUD 或 ownKeys 信号。
+
+执行：
+
+```bash
+node scripts/check_environment_closure.js --case-dir case --before-real-request --json
+```
+
+期望：
+
+- closure 从整个 case 证据面识别信号，不依赖用户再次提醒，也不只扫描 `result/` 静态关键词。
+- 自动执行 Trace-runtime、对象形状、WebAPI 矩阵、XHR/fetch semantics、Session bridge、代码质量和 addon-first 中已触发的组件。
+- 输出为摘要而不是嵌入所有子检查明细，并保留 baseline/hash/mismatch/extra request/networkAttempts 等关键指标。

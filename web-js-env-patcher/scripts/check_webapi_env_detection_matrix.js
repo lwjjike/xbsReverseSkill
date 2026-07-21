@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
@@ -8,12 +9,17 @@ const CATEGORIES = [
   {
     id: 'iframe-realm',
     label: 'iframe / Window realm',
-    patterns: [/iframe/i, /contentWindow/i, /contentDocument/i, /defaultView/i, /srcdoc/i, /document\.write/i, /document\.close/i],
+    patterns: [/iframe/i, /contentWindow/i, /contentDocument/i, /defaultView/i, /frameElement/i, /srcdoc/i, /document\.write/i, /document\.close/i],
   },
   {
     id: 'worker-task',
     label: 'Worker / Message task queue',
-    patterns: [/\bWorker\b/i, /DedicatedWorkerGlobalScope/i, /postMessage/i, /MessageChannel/i, /MessagePort/i, /terminate/i],
+    patterns: [/\bWorker\b/i, /\bSharedWorker\b/i, /WorkerGlobalScope/i, /DedicatedWorkerGlobalScope/i, /SharedWorkerGlobalScope/i, /importScripts/i, /terminate/i],
+  },
+  {
+    id: 'message-lifecycle',
+    label: 'MessagePort / postMessage lifecycle',
+    patterns: [/postMessage/i, /MessageChannel/i, /MessagePort/i, /entangled/i, /structuredClone/i, /\.close\s*\(/i],
   },
   {
     id: 'performance-timeline',
@@ -24,6 +30,16 @@ const CATEGORIES = [
     id: 'dom-cssom',
     label: 'DOM / CSSOM',
     patterns: [/DOMParser/i, /innerHTML/i, /Comment/i, /ShadowRoot/i, /CSSStyleSheet/i, /CSSRuleList/i, /getComputedStyle/i, /document\.links/i, /document\.images/i, /document\.forms/i],
+  },
+  {
+    id: 'dom-crud',
+    label: 'DOM CRUD state machine',
+    patterns: [
+      /appendChild/i, /removeChild/i, /insertBefore/i, /replaceChild/i, /replaceChildren/i,
+      /cloneNode/i, /importNode/i, /adoptNode/i, /isConnected/i, /ownerDocument/i,
+      /childNodes/i, /\bchildren\b/i, /querySelector/i, /getElementById/i,
+      /getElementsBy/i, /\.matches\s*\(/i, /\.closest\s*\(/i, /MutationObserver/i,
+    ],
   },
   {
     id: 'event-clone-error',
@@ -56,6 +72,42 @@ const CATEGORIES = [
     patterns: [/reload writer/i, /form writer/i, /final writer/i, /HTMLFormElement\.submit/i, /Location\.reload/i, /generatedForm/i, /cf-chl-gen/i, /cf-chl-out/i],
   },
 ];
+
+const REQUIRED_CAPABILITIES = {
+  'iframe-realm': [
+    'realm-global-relations',
+    'realm-ecma-constructor-isolation',
+    'realm-webapi-constructor-isolation',
+    'realm-object-isolation',
+    'realm-document-relations',
+    'realm-navigation-lifecycle',
+  ],
+  'worker-task': [
+    'worker-global-surface',
+    'worker-constructor-isolation',
+    'worker-object-isolation',
+    'worker-message-order',
+    'worker-terminate-immediate',
+    'worker-terminate-deferred',
+  ],
+  'message-lifecycle': [
+    'message-order',
+    'message-port-start',
+    'message-port-close-sender',
+    'message-port-close-receiver',
+    'message-port-transfer',
+  ],
+  'dom-crud': [
+    'dom-tree-mutation',
+    'dom-live-collections',
+    'dom-selector-validity',
+    'dom-html-parsing',
+    'dom-document-relations',
+    'dom-mutation-observer',
+  ],
+};
+
+const OBSERVATION_KEYS = ['observation', 'observed', 'result', 'value', 'output', 'expected'];
 
 const BLOCKING_STATUSES = new Set([
   'needs-browser-baseline',
@@ -124,6 +176,10 @@ function readJson(p) {
   return JSON.parse(readText(p));
 }
 
+function sha256(value) {
+  return crypto.createHash('sha256').update(value).digest('hex');
+}
+
 function rel(root, file) {
   return (path.relative(root, file) || '.').replace(/\\/g, '/');
 }
@@ -144,12 +200,14 @@ function walk(root, out = []) {
 }
 
 function listCandidateFiles(caseDir) {
-  const dirs = ['阶段报告', 'notes', 'tmp', 'ruyi-trace'];
+  const dirs = ['阶段报告', 'notes', 'tmp', 'ruyi-trace', 'result'];
   const files = [];
   for (const dir of dirs) {
     const full = path.join(caseDir, dir);
     for (const file of walk(full)) {
-      if (/\.(md|json|jsonl|ndjson|txt)$/i.test(file)) files.push(file);
+      const relative = rel(caseDir, file);
+      if (/(^|\/)(node_modules|dist|build|coverage)(\/|$)/i.test(relative)) continue;
+      if (/\.(md|json|jsonl|ndjson|txt|js|mjs|cjs|ts|py|html)$/i.test(file)) files.push(file);
     }
   }
   return files.filter(file => !SELF_OUTPUT_FILES.has(path.basename(file).toLowerCase()));
@@ -251,11 +309,16 @@ function normalizeCategoryRecords(raw) {
   return {};
 }
 
-function stable(value) {
-  if (Array.isArray(value)) return value.map(stable);
+function stable(value, ignoreRecordMetadata = false) {
+  if (Array.isArray(value)) return value.map(item => stable(item, ignoreRecordMetadata));
   if (!value || typeof value !== 'object') return value;
   const ignored = new Set(['status', 'evidence', 'file', 'notes', 'note', 'handling', 'updatedAt', 'capturedAt']);
-  return Object.fromEntries(Object.keys(value).filter(key => !ignored.has(key)).sort().map(key => [key, stable(value[key])]));
+  return Object.fromEntries(
+    Object.keys(value)
+      .filter(key => !ignoreRecordMetadata || !ignored.has(key))
+      .sort()
+      .map(key => [key, stable(value[key], ignoreRecordMetadata)]),
+  );
 }
 
 function recordId(item, index) {
@@ -267,7 +330,7 @@ function recordPayload(item) {
   for (const key of ['observation', 'observed', 'result', 'value', 'output', 'expected']) {
     if (typeof item[key] !== 'undefined') return stable(item[key]);
   }
-  return stable(item);
+  return stable(item, true);
 }
 
 function assertJsonCategoryCoverage(source, label, expectedCategories, problems, warnings) {
@@ -283,7 +346,11 @@ function assertJsonCategoryCoverage(source, label, expectedCategories, problems,
 function checkJsonFile(caseDir, file, label, problems, warnings) {
   if (!exists(file)) {
     problems.push(`缺少 ${label}：${rel(caseDir, file)}`);
-    return { exists: false, parseOk: false, baselineId: '', categories: [], categoryRecords: {}, runtimeSourceHash: '', generatedBy: '', probeVersion: '' };
+    return {
+      exists: false, parseOk: false, baselineId: '', categories: [], categoryRecords: {},
+      runtimeSourceHash: '', generatedBy: '', capturedBy: '', probeVersion: '',
+      probeSuiteVersion: '', probeSourceHash: '', probeSourceFile: '',
+    };
   }
   try {
     const raw = readJson(file);
@@ -296,11 +363,106 @@ function checkJsonFile(caseDir, file, label, problems, warnings) {
       schemaVersion: raw.schemaVersion || '',
       runtimeSourceHash: raw.runtimeSourceHash || '',
       generatedBy: raw.generatedBy || '',
+      capturedBy: raw.capturedBy || '',
       probeVersion: raw.probeVersion || '',
+      probeSuiteVersion: raw.probeSuiteVersion || '',
+      probeSourceHash: raw.probeSourceHash || '',
+      probeSourceFile: raw.probeSourceFile || '',
     };
   } catch (err) {
     problems.push(`${label} 无法解析为 JSON：${rel(caseDir, file)}：${err.message}`);
-    return { exists: true, parseOk: false, baselineId: '', categories: [], categoryRecords: {}, runtimeSourceHash: '', generatedBy: '', probeVersion: '' };
+    return {
+      exists: true, parseOk: false, baselineId: '', categories: [], categoryRecords: {},
+      runtimeSourceHash: '', generatedBy: '', capturedBy: '', probeVersion: '',
+      probeSuiteVersion: '', probeSourceHash: '', probeSourceFile: '',
+    };
+  }
+}
+
+function actualObservation(item) {
+  if (!item || typeof item !== 'object') return { present: false, value: undefined };
+  for (const key of OBSERVATION_KEYS) {
+    if (typeof item[key] !== 'undefined') return { present: true, value: stable(item[key]), key };
+  }
+  return { present: false, value: undefined, key: '' };
+}
+
+function recordCapabilities(item) {
+  if (!item || typeof item !== 'object') return [];
+  const values = [];
+  if (Array.isArray(item.capabilities)) values.push(...item.capabilities);
+  for (const key of ['capability', 'probeKind', 'behavior']) {
+    if (item[key]) values.push(item[key]);
+  }
+  return [...new Set(values.map(String).filter(Boolean))];
+}
+
+function validateObservationRecords(source, label, expectedCategories, problems) {
+  if (!source.parseOk) return;
+  for (const category of expectedCategories) {
+    const records = Array.isArray(source.categoryRecords[category]) ? source.categoryRecords[category] : [];
+    for (const [index, item] of records.entries()) {
+      const id = recordId(item, index);
+      if (!actualObservation(item).present) {
+        problems.push(`${label} 的 ${category}/${id} 只有 probe/status/evidence，没有实际 observation；证据文本不能作为行为一致性证明`);
+      }
+    }
+  }
+}
+
+function validateRequiredCapabilities(source, label, expectedCategories, problems) {
+  if (!source.parseOk) return;
+  for (const category of expectedCategories) {
+    const required = REQUIRED_CAPABILITIES[category] || [];
+    if (!required.length) continue;
+    const records = Array.isArray(source.categoryRecords[category]) ? source.categoryRecords[category] : [];
+    const covered = new Set(records.flatMap(recordCapabilities));
+    const missing = required.filter(capability => !covered.has(capability));
+    if (missing.length) {
+      problems.push(`${label} 的 ${category} 缺少强制行为能力：${missing.join('、')}`);
+    }
+  }
+}
+
+function validateProbeSourceFile(caseDir, source, label, problems) {
+  if (!source.probeSourceFile) {
+    problems.push(`${label} 缺少 probeSourceFile`);
+    return;
+  }
+  const file = path.resolve(caseDir, source.probeSourceFile);
+  const relative = path.relative(caseDir, file);
+  if (relative.startsWith('..') || path.isAbsolute(relative)) {
+    problems.push(`${label} probeSourceFile 必须位于 case 内：${source.probeSourceFile}`);
+    return;
+  }
+  if (!exists(file)) {
+    problems.push(`${label} probeSourceFile 不存在：${source.probeSourceFile}`);
+    return;
+  }
+  const actual = sha256(fs.readFileSync(file));
+  if (actual !== String(source.probeSourceHash || '').toLowerCase()) {
+    problems.push(`${label} probeSourceHash 与实际源文件不一致：${source.probeSourceHash || '未记录'} != ${actual}`);
+  }
+}
+
+function validateProbeProvenance(caseDir, browser, nodeAudit, problems) {
+  if (!browser.parseOk || !nodeAudit.parseOk) return;
+  if (!browser.probeSuiteVersion) problems.push('浏览器环境 baseline 缺少 probeSuiteVersion');
+  if (!nodeAudit.probeSuiteVersion) problems.push('Node 环境 audit 缺少 probeSuiteVersion');
+  if (browser.probeSuiteVersion && nodeAudit.probeSuiteVersion
+    && browser.probeSuiteVersion !== nodeAudit.probeSuiteVersion) {
+    problems.push(`browser/node probeSuiteVersion 不一致：${browser.probeSuiteVersion} != ${nodeAudit.probeSuiteVersion}`);
+  }
+  if (!browser.probeSourceHash) problems.push('浏览器环境 baseline 缺少 probeSourceHash，无法证明 browser/node 使用同一 probe 源码');
+  if (!nodeAudit.probeSourceHash) problems.push('Node 环境 audit 缺少 probeSourceHash，无法证明 browser/node 使用同一 probe 源码');
+  if (browser.probeSourceHash && nodeAudit.probeSourceHash
+    && browser.probeSourceHash !== nodeAudit.probeSourceHash) {
+    problems.push(`browser/node probeSourceHash 不一致：${browser.probeSourceHash} != ${nodeAudit.probeSourceHash}`);
+  }
+  validateProbeSourceFile(caseDir, browser, '浏览器环境 baseline', problems);
+  validateProbeSourceFile(caseDir, nodeAudit, 'Node 环境 audit', problems);
+  if (!browser.generatedBy && !browser.capturedBy) {
+    problems.push('浏览器环境 baseline 缺少 generatedBy/capturedBy');
   }
 }
 
@@ -324,7 +486,10 @@ function compareCategoryRecords(browser, nodeAudit, expectedCategories, problems
         problems.push(`Node 环境 audit 缺少 ${category}/${id}`);
         continue;
       }
-      if (JSON.stringify(recordPayload(expectedItem)) !== JSON.stringify(recordPayload(observedItem))) {
+      const expectedObservation = actualObservation(expectedItem);
+      const observedObservation = actualObservation(observedItem);
+      if (!expectedObservation.present || !observedObservation.present) continue;
+      if (JSON.stringify(expectedObservation.value) !== JSON.stringify(observedObservation.value)) {
         problems.push(`WebAPI 行为不一致：${category}/${id}`);
       }
     }
@@ -347,10 +512,25 @@ function check(args) {
 
   const browser = requireMatrix
     ? checkJsonFile(caseDir, browserPath, '浏览器环境 baseline', problems, warnings)
-    : { exists: exists(browserPath), parseOk: false, baselineId: '', categories: [], categoryRecords: {}, runtimeSourceHash: '', generatedBy: '', probeVersion: '' };
+    : {
+      exists: exists(browserPath), parseOk: false, baselineId: '', categories: [], categoryRecords: {},
+      runtimeSourceHash: '', generatedBy: '', capturedBy: '', probeVersion: '',
+      probeSuiteVersion: '', probeSourceHash: '', probeSourceFile: '',
+    };
   const nodeAudit = requireMatrix
     ? checkJsonFile(caseDir, nodeAuditPath, 'Node 环境 audit', problems, warnings)
-    : { exists: exists(nodeAuditPath), parseOk: false, baselineId: '', categories: [], categoryRecords: {}, runtimeSourceHash: '', generatedBy: '', probeVersion: '' };
+    : {
+      exists: exists(nodeAuditPath), parseOk: false, baselineId: '', categories: [], categoryRecords: {},
+      runtimeSourceHash: '', generatedBy: '', capturedBy: '', probeVersion: '',
+      probeSuiteVersion: '', probeSourceHash: '', probeSourceFile: '',
+    };
+
+  const expectedCategories = triggered.length
+    ? triggered.map(item => item.id)
+    : [...new Set([...browser.categories, ...nodeAudit.categories])];
+  if (args.require && !expectedCategories.length) {
+    problems.push('要求 WebAPI 行为审计，但未发现触发类别，且 baseline/audit 没有 categories；不得用空矩阵通过');
+  }
 
   let matrix = {
     exists: exists(matrixPath),
@@ -365,7 +545,6 @@ function check(args) {
     const requiredKeywords = ['baselineId', '浏览器', 'Node', '状态', '证据'];
     matrix.missingKeywords = requiredKeywords.filter(key => !text.includes(key));
     for (const key of matrix.missingKeywords) problems.push(`矩阵缺少关键字段：${key}`);
-    const expectedCategories = triggered.length ? triggered.map(item => item.id) : CATEGORIES.map(item => item.id);
     matrix.missingCategories = expectedCategories.filter(id => !text.includes(id));
     for (const id of matrix.missingCategories) problems.push(`矩阵缺少触发类别：${id}`);
     matrix.statuses = extractStatuses(text);
@@ -381,10 +560,14 @@ function check(args) {
     }
   }
 
-  const expectedCategories = triggered.length ? triggered.map(item => item.id) : (args.require ? CATEGORIES.map(item => item.id) : []);
   assertJsonCategoryCoverage(browser, '浏览器环境 baseline', expectedCategories, problems, warnings);
   assertJsonCategoryCoverage(nodeAudit, 'Node 环境 audit', expectedCategories, problems, warnings);
   if (requireMatrix && browser.parseOk && nodeAudit.parseOk) {
+    validateProbeProvenance(caseDir, browser, nodeAudit, problems);
+    validateObservationRecords(browser, '浏览器环境 baseline', expectedCategories, problems);
+    validateObservationRecords(nodeAudit, 'Node 环境 audit', expectedCategories, problems);
+    validateRequiredCapabilities(browser, '浏览器环境 baseline', expectedCategories, problems);
+    validateRequiredCapabilities(nodeAudit, 'Node 环境 audit', expectedCategories, problems);
     compareCategoryRecords(browser, nodeAudit, expectedCategories, problems);
     if (!nodeAudit.runtimeSourceHash) problems.push('Node 环境 audit 缺少 runtimeSourceHash，代码变化后旧审计不得继续使用');
     if (!nodeAudit.probeVersion) problems.push('Node 环境 audit 缺少 probeVersion');
@@ -403,6 +586,11 @@ function check(args) {
     browserPath,
     nodeAuditPath,
     triggered,
+    requiredCapabilities: Object.fromEntries(
+      expectedCategories
+        .filter(category => REQUIRED_CAPABILITIES[category])
+        .map(category => [category, REQUIRED_CAPABILITIES[category]]),
+    ),
     matrix,
     browser,
     nodeAudit,

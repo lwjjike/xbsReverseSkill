@@ -23,8 +23,13 @@
 ## Worker / postMessage 必查行为
 
 - Worker scope 必须有独立 `performance`、`timeOrigin`、`performance.now()` 序列；不得无证据复用主线程 performance。
+- Worker scope 的 `self` / `globalThis` 必须指向 WorkerGlobalScope 自身；`window`、`document`、`top`、`parent`、`frames`、`localStorage` 等 Window-only API 必须按浏览器 baseline 缺失。
+- Worker 的 ECMAScript/WebAPI 构造器和对象实例不得直接复用主 Window Realm 的引用。应验证 `Object`、`Function`、`Array`、`Promise`、`Event`、`EventTarget`、`URL`、`Blob`、`Headers`、`Request`、`Response`、`XMLHttpRequest`、`navigator`、`performance`、`crypto` 的 identity 与 `instanceof`。
 - Worker scope 的 `setTimeout` / `clearTimeout` 必须绑定 Worker 私有状态；`Worker.prototype.terminate()` 后 pending timer 和延迟 `postMessage` 必须清理或丢弃。
+- 同一 turn 内调用 `terminate()` 后，尚未入队与已经入队但未派发的 Worker message 都要按目标浏览器 baseline 处理；至少分别测试“立即 terminate”和“延迟 terminate”。
 - `WorkerGlobalScope.self.postMessage()` 与 `MessagePort.prototype.postMessage()` 必须以后续 task 派发；不得同步触发对端 listener。
+- `MessagePort.start()`、设置 `onmessage` 的隐式 start、`close()` 的发送端/接收端组合、entangled peer 解绑和 transfer 后原端口失效必须分别检测。
+- sender 已 close、receiver 已 close、双方 close、消息已排队后 close、transfer 后再次 postMessage 都必须有浏览器 baseline；不能只检查 peer 是否 closed。
 - `addEventListener` / `removeEventListener` / `dispatchEvent` 必须覆盖 listener object、capture、once、passive、stopImmediatePropagation 和 `handleEvent`。
 - `MessagePort.prototype.postMessage(fn)`、`structuredClone(fn)` 的 `DataCloneError` name / message / stack 不能暴露 JS fallback 源码。
 - iframe 参与消息链时，单独检查 `contentWindow`、`contentDocument`、`defaultView`、`srcdoc`、`document.write/close`、Window/IframeWindow ownKeys / ownNames。
@@ -46,6 +51,8 @@
 - 任务队列语义：同步 / 后续 task / microtask / timer
 - Worker performance baseline：
 - terminate 后 timer / postMessage 行为：
+- MessagePort sender/receiver close、start、transfer：
+- Worker Realm 构造器与对象 identity：
 - iframe realm / ownKeys 状态：
 - WebAPI 环境检测矩阵：
 - 阻塞点：

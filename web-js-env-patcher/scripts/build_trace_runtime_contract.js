@@ -5,6 +5,9 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+const STATEFUL_API_PATTERN = /XMLHttpRequest|fetch|sendBeacon|readyState|readystatechange|loadend|abort|timeout|location\.reload|beforeunload|pagehide|visibilitychange|unload|Worker|SharedWorker|MessagePort|MessageChannel|postMessage|terminate|\.close|appendChild|removeChild|insertBefore|replaceChild|replaceChildren|innerHTML|textContent|querySelector|MutationObserver/i;
+const MAX_TIMELINE_SEQUENCE = 10000;
+
 function parseArgs(argv) {
   const args = {
     caseDir: '',
@@ -128,7 +131,11 @@ function parseTraceFile(file) {
 function firstValue(object, keys, fallback) {
   if (arguments.length < 3) fallback = '';
   for (const key of keys) {
-    if (object && typeof object[key] !== 'undefined' && object[key] !== null && object[key] !== '') return object[key];
+    if (object
+      && Object.prototype.hasOwnProperty.call(object, key)
+      && typeof object[key] !== 'undefined'
+      && object[key] !== null
+      && object[key] !== '') return object[key];
   }
   return fallback;
 }
@@ -137,9 +144,14 @@ function normalizeText(value) {
   if (typeof value === 'string') return value;
   if (value === null || typeof value === 'undefined') return '';
   if (typeof value === 'object') {
-    return firstValue(value, ['name', 'type', 'id', 'path', 'value'], JSON.stringify(stable(value)));
+    return firstValue(value, ['class', 'interface', 'name', 'type', 'id', 'path', 'value'], JSON.stringify(stable(value)));
   }
   return String(value);
+}
+
+function normalizeTraceMember(value) {
+  const text = normalizeText(value);
+  return text.replace(/^(get|set|call|construct)\s+/i, '').trim();
 }
 
 function normalizeStack(event) {
@@ -161,11 +173,14 @@ function priorityOf(api, event) {
 }
 
 function normalizeObservation(event) {
-  const api = normalizeText(firstValue(event, ['api', 'path', 'name', 'prop'], ''));
+  const interfaceName = normalizeText(firstValue(event, ['interface', 'interfaceName'], ''));
+  const member = normalizeTraceMember(firstValue(event, ['member', 'property', 'method'], ''));
+  const explicitApi = normalizeText(firstValue(event, ['api', 'path', 'name', 'prop'], ''));
+  const api = explicitApi || [interfaceName, member].filter(Boolean).join('.');
   if (!api) return null;
   const accessType = normalizeText(firstValue(event, ['accessType', 'operation', 'op', 'type'], 'unknown'));
   const realm = normalizeText(firstValue(event, ['realmId', 'realm', 'contextId', 'frameId', 'workerId'], 'main'));
-  const receiver = normalizeText(firstValue(event, ['receiver', 'receiverType', 'thisType', 'target', 'object'], ''));
+  const receiver = normalizeText(firstValue(event, ['receiver', 'receiverType', 'thisType', 'target', 'object', 'thisObj'], ''));
   const phase = normalizeText(firstValue(event, ['phase', 'writer', 'navigationPhase', 'stage'], ''));
   const descriptor = firstValue(event, ['descriptor', 'propertyDescriptor'], undefined);
   const prototypeChain = firstValue(event, ['prototypeChain', 'prototypes', 'protoChain'], undefined);
@@ -213,18 +228,54 @@ function addDistinct(target, value, limit = 20) {
   if (target.length < limit) target.push({ digest, value });
 }
 
+function orderStatefulTimeline(events) {
+  const sourceFiles = [...new Set(events.map(event => event.sourceFile))];
+  if (sourceFiles.length <= 1) {
+    return [...events].sort((a, b) => a.fileOrder - b.fileOrder);
+  }
+  const sequences = events.map(event => event.traceSequence);
+  const unique = new Set(sequences);
+  if (sequences.some(sequence => !Number.isFinite(sequence) || sequence <= 0)
+    || unique.size !== sequences.length) {
+    throw new Error('多文件 Trace 无法建立唯一全局时间线；请合并为单一完整 Trace，或确保所有事件包含跨文件唯一递增 sequence。');
+  }
+  return [...events].sort((a, b) => a.traceSequence - b.traceSequence);
+}
+
+function buildStatefulTimeline(events) {
+  const ordered = orderStatefulTimeline(events);
+  const sequence = [];
+  for (const event of ordered) {
+    if (sequence[sequence.length - 1] !== event.contractId) sequence.push(event.contractId);
+  }
+  return {
+    schemaVersion: 'trace-runtime-timeline/v1',
+    required: sequence.length > 0,
+    eventCount: ordered.length,
+    collapsedCount: sequence.length,
+    truncated: sequence.length > MAX_TIMELINE_SEQUENCE,
+    sourceFiles: [...new Set(ordered.map(event => event.sourceFile))],
+    sequence: sequence.slice(0, MAX_TIMELINE_SEQUENCE),
+    sequenceSha256: sha256(JSON.stringify(sequence)),
+  };
+}
+
 function buildContract(args) {
   const caseDir = path.resolve(args.caseDir || '.');
   const files = discoverTraceFiles(args, caseDir);
   if (!files.length) throw new Error('未找到原始 Trace 文件；请使用 --trace 指定，或把日志放入 case/ruyi-trace/logs/。');
+  if (!args.traces.length && files.length > 1) {
+    throw new Error(`自动发现 ${files.length} 份原始 Trace；禁止跨历史采集静默合并。请使用 --trace 显式选择当前 baseline 的完整 Trace，分片文件可重复传入 --trace。`);
+  }
   const sourceFiles = [];
   const groups = new Map();
+  const statefulTimelineEvents = [];
   let eventCount = 0;
   for (const file of files) {
     const text = fs.readFileSync(file);
     sourceFiles.push({ file: rel(caseDir, file), sha256: sha256(text), bytes: text.length });
     const events = parseTraceFile(file);
-    for (const event of events) {
+    for (const [fileEventOrder, event] of events.entries()) {
       eventCount += 1;
       const item = normalizeObservation(event);
       if (!item) continue;
@@ -262,14 +313,26 @@ function buildContract(args) {
       if (item.sequence && group.sequences.length < 50) group.sequences.push(item.sequence);
       if (item.stack && !group.stacks.includes(item.stack) && group.stacks.length < 10) group.stacks.push(item.stack);
       for (const field of Object.keys(group.assertions)) addDistinct(group.assertions[field], item[field]);
+      if (STATEFUL_API_PATTERN.test(item.api)) {
+        statefulTimelineEvents.push({
+          contractId: group.id,
+          sourceFile: rel(caseDir, file),
+          fileOrder: fileEventOrder,
+          traceSequence: item.sequence,
+          realm: item.realm,
+          phase: item.phase,
+          api: item.api,
+        });
+      }
     }
   }
   const contracts = [...groups.values()].sort((a, b) =>
     a.priority.localeCompare(b.priority) || a.api.localeCompare(b.api) || a.realm.localeCompare(b.realm)
   );
   const traceSourceHash = sha256(JSON.stringify(sourceFiles.map(item => [item.file, item.sha256])));
+  const timeline = buildStatefulTimeline(statefulTimelineEvents);
   const contract = {
-    schemaVersion: 'trace-runtime-contract/v2',
+    schemaVersion: 'trace-runtime-contract/v3',
     generatedBy: 'build_trace_runtime_contract.js',
     generatedAt: new Date().toISOString(),
     baselineId: args.baselineId || '',
@@ -278,12 +341,14 @@ function buildContract(args) {
     eventCount,
     contractCount: contracts.length,
     contracts,
+    timeline,
   };
   contract.contractHash = sha256(JSON.stringify(stable({
     schemaVersion: contract.schemaVersion,
     baselineId: contract.baselineId,
     traceSourceHash: contract.traceSourceHash,
     contracts: contract.contracts,
+    timeline: contract.timeline,
   })));
   const out = path.resolve(args.out || path.join(caseDir, 'notes', 'trace-runtime-contract.json'));
   fs.mkdirSync(path.dirname(out), { recursive: true });
@@ -304,6 +369,8 @@ function renderMarkdown(result) {
     `- 行为契约数：${result.contract.contractCount}`,
     `- P0：${p0}`,
     `- P1：${p1}`,
+    `- 状态事件：${result.contract.timeline.eventCount}`,
+    `- 折叠时间线：${result.contract.timeline.collapsedCount}`,
     `- traceSourceHash：${result.contract.traceSourceHash}`,
     `- contractHash：${result.contract.contractHash}`,
     '',

@@ -108,6 +108,7 @@ function contractHash(contract) {
     baselineId: contract.baselineId,
     traceSourceHash: contract.traceSourceHash,
     contracts: normalizeItems(contract),
+    timeline: contract.timeline || {},
   })));
 }
 
@@ -136,14 +137,60 @@ function compareItem(contractItem, auditItem) {
     const missing = expected.filter(item => !observed.includes(item));
     if (missing.length) diffs.push({ field, type: 'value-mismatch', expected, observed, missing });
   }
-  if (Array.isArray(contractItem.sequences) && contractItem.sequences.length > 1 && Array.isArray(auditItem.sequences)) {
-    const expectedOrder = [...contractItem.sequences].sort((a, b) => a - b);
-    const observedOrder = [...auditItem.sequences].sort((a, b) => a - b);
-    if (observedOrder.length < Math.min(expectedOrder.length, 2)) {
-      diffs.push({ field: 'sequences', type: 'insufficient-sequence-evidence', expected: expectedOrder, observed: observedOrder });
+  if (Number(contractItem.count || 0) > 1) {
+    const observedSequences = Array.isArray(auditItem.sequences)
+      ? auditItem.sequences
+      : (typeof auditItem.sequence !== 'undefined' ? [auditItem.sequence] : []);
+    if (observedSequences.length < Math.min(Number(contractItem.count), 2)) {
+      diffs.push({
+        field: 'sequences',
+        type: 'insufficient-sequence-evidence',
+        expected: Math.min(Number(contractItem.count), 2),
+        observed: observedSequences.length,
+      });
     }
   }
   return diffs;
+}
+
+function compareTimeline(contract, audit, problems) {
+  const expected = contract.timeline || {};
+  if (!expected.required) return { required: false, clean: true, expectedHash: '', observedHash: '' };
+  const observed = audit.timeline || {};
+  if (observed.generatedFrom !== 'runtime-event-timeline') {
+    problems.push('Node audit timeline 不是由原始 runtime event timeline 生成；分组 observations 不能证明 happens-before 顺序');
+  }
+  if (observed.valid !== true) {
+    problems.push(`Node audit timeline 含无效项或重复 sequence：invalid=${observed.invalidEntries || 0}，duplicate=${observed.duplicateSequences || 0}`);
+  }
+  const observedSequence = Array.isArray(observed.sequence) ? observed.sequence.map(String) : [];
+  if (!observedSequence.length) {
+    problems.push('Trace contract 包含状态型 API 时间线，但 Node audit 没有 timeline.sequence；逐 API matched 不能替代生命周期顺序');
+    return {
+      required: true,
+      clean: false,
+      expectedHash: expected.sequenceSha256 || '',
+      observedHash: observed.sequenceSha256 || '',
+    };
+  }
+  const observedHash = sha256(JSON.stringify(observedSequence));
+  const expectedHash = String(expected.sequenceSha256 || '');
+  if (!expectedHash) {
+    problems.push('Trace contract timeline 缺少 sequenceSha256，必须重新生成 v3 contract');
+  } else if (observedHash !== expectedHash) {
+    problems.push(`状态型 API 时间线不一致：${observedHash} != ${expectedHash}`);
+  }
+  return {
+    required: true,
+    clean: Boolean(expectedHash)
+      && observed.generatedFrom === 'runtime-event-timeline'
+      && observed.valid === true
+      && observedHash === expectedHash,
+    expectedHash,
+    observedHash,
+    expectedCount: Number(expected.collapsedCount || 0),
+    observedCount: observedSequence.length,
+  };
 }
 
 function check(args) {
@@ -164,11 +211,11 @@ function check(args) {
   try { audit = readJson(auditPath); } catch (err) { problems.push(`Node runtime audit 无法解析：${err.message}`); }
   if (!contract || !audit) return { caseDir, contractPath, auditPath, clean: false, problems, warnings, results: [], summary: {} };
 
-  if (contract.schemaVersion !== 'trace-runtime-contract/v2') problems.push(`不支持的 contract schemaVersion：${contract.schemaVersion || '未记录'}`);
-  if (!/^node-trace-runtime-audit\/v2$/.test(String(audit.schemaVersion || ''))) {
-    problems.push(`Node audit 必须使用 node-trace-runtime-audit/v2，当前为：${audit.schemaVersion || '未记录'}`);
+  if (contract.schemaVersion !== 'trace-runtime-contract/v3') problems.push(`Trace contract 必须使用 trace-runtime-contract/v3，当前为：${contract.schemaVersion || '未记录'}；旧 contract 没有可信状态时间线`);
+  if (!/^node-trace-runtime-audit\/v3$/.test(String(audit.schemaVersion || ''))) {
+    problems.push(`Node audit 必须使用 node-trace-runtime-audit/v3，当前为：${audit.schemaVersion || '未记录'}`);
   }
-  if (audit.generatedBy !== 'run_trace_runtime_audit.js' && audit.generatedBy !== 'runtime-audit-recorder/v2') {
+  if (audit.generatedBy !== 'run_trace_runtime_audit.js' && audit.generatedBy !== 'runtime-audit-recorder/v3') {
     problems.push(`Node audit generatedBy 不可信：${audit.generatedBy || '未记录'}`);
   }
   const expectedContractHash = contractHash(contract);
@@ -181,6 +228,9 @@ function check(args) {
   if (!audit.runtimeSourceHash) problems.push('Node audit 缺少 runtimeSourceHash，无法判断审计是否已因源码变化失效');
   if (!audit.probeVersion) problems.push('Node audit 缺少 probeVersion');
   if (audit.networkMode !== 'no-send') problems.push(`Trace runtime audit 必须在 no-send 模式执行，当前为：${audit.networkMode || '未记录'}`);
+  if (!Object.prototype.hasOwnProperty.call(audit, 'networkAttempts') || Number(audit.networkAttempts) !== 0) {
+    problems.push(`Trace runtime audit 必须明确记录 networkAttempts=0，当前为：${Object.prototype.hasOwnProperty.call(audit, 'networkAttempts') ? audit.networkAttempts : '未记录'}`);
+  }
 
   const contractItems = normalizeItems(contract);
   const auditItems = normalizeItems(audit);
@@ -216,6 +266,7 @@ function check(args) {
     return !contractItems.some(contractItem => (contractItem.id ? `id:${contractItem.id}` : itemKey(contractItem)) === key);
   });
   if (unexpectedAuditItems.length) warnings.push(`Node audit 出现 ${unexpectedAuditItems.length} 个 Trace contract 未记录的 runtime 观测项，必须分类为新动态分支或宿主泄露`);
+  const timeline = compareTimeline(contract, audit, problems);
 
   const summary = {
     contractCount: contractItems.length,
@@ -224,8 +275,12 @@ function check(args) {
     mismatched: results.filter(item => !item.clean).length,
     blockingMismatches: results.filter(item => !item.clean && item.blocking).length,
     unexpectedAuditItems: unexpectedAuditItems.length,
+    baselineId: contract.baselineId || audit.baselineId || '',
+    traceSourceHash: contract.traceSourceHash || audit.traceSourceHash || '',
     contractHash: expectedContractHash,
     runtimeSourceHash: audit.runtimeSourceHash || '',
+    networkAttempts: audit.networkAttempts,
+    timeline,
   };
   return { caseDir, contractPath, auditPath, clean: problems.length === 0, problems, warnings, results, summary };
 }
@@ -244,7 +299,14 @@ function renderMarkdown(result) {
     lines.push(`- matched：${result.summary.matched}`);
     lines.push(`- mismatch：${result.summary.mismatched}`);
     lines.push(`- P0/P1 阻断差异：${result.summary.blockingMismatches}`);
+    lines.push(`- baselineId：${result.summary.baselineId || '未记录'}`);
+    lines.push(`- traceSourceHash：${result.summary.traceSourceHash || '未记录'}`);
     lines.push(`- runtimeSourceHash：${result.summary.runtimeSourceHash || '未记录'}`);
+    lines.push(`- 真实网络尝试：${String(result.summary.networkAttempts ?? '未记录')}`);
+    if (result.summary.timeline && result.summary.timeline.required) {
+      lines.push(`- 状态时间线：${result.summary.timeline.clean ? 'matched' : 'mismatch'}`);
+      lines.push(`- 状态时间线项：browser=${result.summary.timeline.expectedCount || 0}，Node=${result.summary.timeline.observedCount || 0}`);
+    }
   }
   const bad = result.results.filter(item => !item.clean);
   if (bad.length) {

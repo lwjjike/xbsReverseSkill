@@ -92,6 +92,62 @@ function normalizeObservations(raw) {
   return [];
 }
 
+function normalizeTimeline(raw, observations) {
+  const source = raw && (raw.timeline || raw.eventTimeline || raw.sequenceTimeline);
+  let entries = [];
+  if (Array.isArray(source)) {
+    entries = source;
+  } else if (source && Array.isArray(source.sequence)) {
+    entries = source.sequence;
+  }
+  let ordered = [];
+  let invalidEntries = 0;
+  if (entries.length) {
+    ordered = entries.map((item, index) => ({
+      id: String(item && typeof item === 'object'
+        ? (item.contractId || item.id || item.key || '')
+        : item),
+      sequence: Number(item && typeof item === 'object'
+        ? (typeof item.sequence !== 'undefined' ? item.sequence : (typeof item.seq !== 'undefined' ? item.seq : index))
+        : index),
+    })).filter(item => {
+      const valid = Boolean(item.id) && Number.isFinite(item.sequence);
+      if (!valid) invalidEntries += 1;
+      return valid;
+    }).sort((a, b) => a.sequence - b.sequence);
+  } else {
+    for (const observation of observations) {
+      const id = String(observation && (observation.id || observation.contractId || '') || '');
+      if (!id) continue;
+      const sequences = Array.isArray(observation.sequences)
+        ? observation.sequences
+        : (typeof observation.sequence !== 'undefined' ? [observation.sequence] : []);
+      for (const sequence of sequences) {
+        ordered.push({ id, sequence: Number(sequence) || 0 });
+      }
+    }
+    ordered.sort((a, b) => a.sequence - b.sequence);
+  }
+  const sequence = [];
+  for (const item of ordered) {
+    if (sequence[sequence.length - 1] !== item.id) sequence.push(item.id);
+  }
+  const uniqueSequences = new Set(ordered.map(item => item.sequence));
+  const duplicateSequences = ordered.length - uniqueSequences.size;
+  return {
+    schemaVersion: 'trace-runtime-timeline/v1',
+    generatedFrom: entries.length ? 'runtime-event-timeline' : 'grouped-observations',
+    valid: invalidEntries === 0 && duplicateSequences === 0,
+    invalidEntries,
+    duplicateSequences,
+    eventCount: ordered.length,
+    collapsedCount: sequence.length,
+    truncated: false,
+    sequence,
+    sequenceSha256: sha256(JSON.stringify(sequence)),
+  };
+}
+
 function runAudit(args) {
   const caseDir = path.resolve(args.caseDir || '.');
   const resultDir = path.join(caseDir, 'result');
@@ -135,20 +191,33 @@ function runAudit(args) {
   }
   const observations = normalizeObservations(raw);
   if (!observations.length) problems.push('Node audit 没有 observations / items / events');
+  const hasNetworkAttempts = raw
+    && (Object.prototype.hasOwnProperty.call(raw, 'networkAttempts')
+      || Object.prototype.hasOwnProperty.call(raw, 'realNetworkRequests'));
+  if (!hasNetworkAttempts) problems.push('Node audit 必须显式记录 networkAttempts=0；缺失字段不能默认视为未访问网络');
   const networkAttempts = Number(raw.networkAttempts || raw.realNetworkRequests || 0);
   if (networkAttempts > 0) problems.push(`audit-only 阶段检测到 ${networkAttempts} 次真实网络尝试`);
+  const timeline = normalizeTimeline(raw, observations);
+  if (!timeline.valid) {
+    problems.push(`Node audit timeline 含无效项或重复 sequence：invalid=${timeline.invalidEntries}，duplicate=${timeline.duplicateSequences}`);
+  }
+  if (contract.timeline && contract.timeline.required
+    && timeline.generatedFrom !== 'runtime-event-timeline') {
+    problems.push('Trace contract 要求状态时间线，但审计入口没有输出原始 runtime event timeline；禁止从分组 observations 反推全局顺序');
+  }
   const audit = {
-    schemaVersion: 'node-trace-runtime-audit/v2',
+    schemaVersion: 'node-trace-runtime-audit/v3',
     generatedBy: 'run_trace_runtime_audit.js',
     generatedAt: new Date().toISOString(),
     baselineId: contract.baselineId || raw.baselineId || '',
     contractHash: contractHash(contract),
     traceSourceHash: contract.traceSourceHash || '',
     runtimeSourceHash: runtimeSourceHash(resultDir),
-    probeVersion: raw.probeVersion || 'runtime-audit/v2',
+    probeVersion: raw.probeVersion || 'runtime-audit/v3',
     networkMode: 'no-send',
     networkAttempts,
     observations,
+    timeline,
     runtimeMeta: raw.runtimeMeta || {},
   };
   fs.writeFileSync(out, `${JSON.stringify(audit, null, 2)}\n`, 'utf8');
@@ -165,6 +234,8 @@ function runAudit(args) {
       contractHash: audit.contractHash,
       runtimeSourceHash: audit.runtimeSourceHash,
       networkAttempts,
+      timelineEvents: timeline.eventCount,
+      timelineCollapsed: timeline.collapsedCount,
     },
     stdout: child.stdout || '',
     stderr: child.stderr || '',
@@ -185,6 +256,8 @@ function renderMarkdown(result) {
     lines.push(`- contractHash：${result.audit.contractHash}`);
     lines.push(`- runtimeSourceHash：${result.audit.runtimeSourceHash}`);
     lines.push(`- 真实网络尝试：${result.audit.networkAttempts}`);
+    lines.push(`- 状态时间线事件：${result.audit.timelineEvents}`);
+    lines.push(`- 状态时间线折叠项：${result.audit.timelineCollapsed}`);
   }
   if (result.problems.length) {
     lines.push('', '## 问题');

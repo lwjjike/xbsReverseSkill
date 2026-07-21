@@ -10,6 +10,8 @@
 - 每次修改 `result/`、刷新动态 JS、切换 baseline 或重新采集 Trace 后，旧 audit 立即失效；必须重新计算 `traceSourceHash`、`contractHash` 和 `runtimeSourceHash`。
 - Trace-runtime audit 必须在 `no-send` 模式运行。审计阶段禁止访问目标网络，XHR/fetch 只允许记录准备发送的 transcript。
 - 在 P0/P1 runtime closure 完成前，不得运行真实请求、不得继续扩大 POST 次数、不得把 writer 未触发归因于流程或 TLS。
+- 状态型 API 必须比较原始 happens-before 时间线。不得把 sequence 排序后只比数量，也不得从按 API 分组的 observations 反推全局顺序。
+- 自动发现到多份原始 Trace 时不得跨历史采集静默合并；必须使用 `--trace` 显式选择当前 `baselineId` 的完整 Trace。多文件分片只有在事件 sequence 跨文件全局唯一时才允许合并。
 
 ## 强制产物
 
@@ -22,7 +24,7 @@ case/notes/trace-runtime-diff.md
 `trace-runtime-contract.json` 必须由以下命令从原始 Trace 生成：
 
 ```bash
-node scripts/build_trace_runtime_contract.js --case-dir case --baseline-id <baselineId> --markdown
+node scripts/build_trace_runtime_contract.js --case-dir case --trace case/ruyi-trace/logs/current.ndjson --baseline-id <baselineId> --markdown
 ```
 
 不得手工创建空 contract，也不得只保留 Top 30 API。所有不同的 API、access type、realm、receiver 和 phase 组合都必须进入契约。
@@ -38,6 +40,7 @@ Trace 有证据时必须记录：
 - prototype chain，包括 XHR/EventTarget 等中间原型层。
 - 参数、返回值、异常和副作用的稳定摘要。
 - 调用顺序、stack 证据和 navigation epoch。
+- XHR open/send/readyState、reload/navigation、Worker/MessagePort、terminate/close、DOM mutation 和 observer callback 等状态事件的折叠时间线、完整 sequence hash 与来源 Trace。
 
 缺少真实值时应标记为待同 baseline 采样，而不是用空值或默认值生成匹配契约。
 
@@ -67,8 +70,12 @@ audit-only 模式：
 
 ```json
 {
-  "probeVersion": "case-runtime-audit/v2",
+  "probeVersion": "case-runtime-audit/v3",
   "networkAttempts": 0,
+  "timeline": [
+    {"contractId": "contract item id", "sequence": 101},
+    {"contractId": "another contract item id", "sequence": 102}
+  ],
   "observations": [
     {
       "id": "contract item id",
@@ -91,6 +98,8 @@ audit-only 模式：
 
 `id` 应直接使用 contract item id。观测值必须来自当前 runtime 的真实 probe，不得复制 contract 中的 digest；`run_trace_runtime_audit.js` 会统一计算并写入可信元数据。
 
+`timeline` 必须由 runtime 在事件实际发生时追加，且保留严格递增 sequence。只给每个 observation 填写局部 `sequences`、再由审计脚本排序重建，不足以证明交错事件、terminate/close、reload 销毁或 DOM mutation 的真实顺序。
+
 运行：
 
 ```bash
@@ -106,6 +115,8 @@ Python 入口使用 `case/result/final.py`。
 - `contractHash`、`traceSourceHash`、`baselineId` 不一致。
 - Node audit 缺少 `runtimeSourceHash` 或 `probeVersion`。
 - audit-only 阶段发生真实网络访问。
+- contract 仍为 v1/v2、Node audit 仍为 v1/v2，或 timeline 不是由原始 runtime event timeline 生成。
+- 多份 Trace 无法建立唯一全局顺序，或 browser/Node 折叠状态时间线 hash 不一致。
 - 任一 P0/P1 契约缺少 runtime observation。
 - owner、descriptor、brand、prototype、ownKeys、返回值、异常或副作用不一致。
 - Node 多出 Trace 未记录的宿主 API 观测，且未分类为动态新分支或 Node 泄露。

@@ -62,19 +62,90 @@ function walk(root, out = []) {
 }
 
 function hasTraceEvidence(caseDir) {
-  return [
+  const fixed = [
     path.join(caseDir, 'ruyi-trace'),
     path.join(caseDir, 'tmp', 'env-trace.jsonl'),
     path.join(caseDir, 'tmp', 'missing-env.json'),
     path.join(caseDir, 'notes', 'trace-api-inventory.json'),
     path.join(caseDir, 'notes', 'trace-runtime-contract.json'),
-  ].some(exists);
+  ];
+  if (fixed.some(exists)) return true;
+  return walk(caseDir).some(file => {
+    const relative = (path.relative(caseDir, file) || '.').replace(/\\/g, '/');
+    if (/(^|\/)(node_modules|dist|build|coverage|vendor)(\/|$)/i.test(relative)) return false;
+    return /(?:^|\/)(?:trace|ruyitrace|missing-env)[^/]*\.(?:json|jsonl|ndjson|log|txt)$/i.test(relative);
+  });
 }
 
-function scanResult(caseDir) {
+function evidenceFiles(caseDir) {
+  const roots = ['阶段报告', 'notes', 'tmp', 'fixtures', 'ruyi-trace', 'result'];
+  const files = [];
+  for (const root of roots) {
+    for (const file of walk(path.join(caseDir, root))) {
+      const relative = (path.relative(caseDir, file) || '.').replace(/\\/g, '/');
+      if (/(^|\/)(node_modules|dist|build|coverage|vendor|third_party|third-party)(\/|$)/i.test(relative)) continue;
+      if (!/\.(?:md|txt|log|json|jsonl|ndjson|js|mjs|cjs|ts|py|html)$/i.test(file)) continue;
+      files.push(file);
+      if (files.length >= 2000) return files;
+    }
+  }
+  return files;
+}
+
+function scanCaseEvidence(caseDir) {
   const resultDir = path.join(caseDir, 'result');
   let hasBrowserEnv = false;
   let hasNetworkImpl = false;
+  let networkEvidence = false;
+  let webapiEvidence = false;
+  let realmLifecycleEvidence = false;
+  let domCrudEvidence = false;
+  let objectShapeEvidence = false;
+  const hits = {
+    network: [],
+    webapi: [],
+    realmLifecycle: [],
+    domCrud: [],
+    objectShape: [],
+  };
+  const recordHit = (type, file) => {
+    const relative = (path.relative(caseDir, file) || '.').replace(/\\/g, '/');
+    if (hits[type].length < 8 && !hits[type].includes(relative)) hits[type].push(relative);
+  };
+  for (const file of evidenceFiles(caseDir)) {
+    let text = '';
+    try { text = fs.readFileSync(file, 'utf8').slice(0, 300000); } catch { continue; }
+    const relative = (path.relative(caseDir, file) || '.').replace(/\\/g, '/');
+    const inResult = relative.startsWith('result/');
+    if (/\b(XMLHttpRequest|fetch|sendBeacon|Request|Response|Headers)\b|network-transcript|xhr-fetch/i.test(text)
+      || /(?:browser|node)-network-transcript\.(?:json|ndjson)$/i.test(relative)) {
+      networkEvidence = true;
+      recordHit('network', file);
+      if (inResult && /\.(?:js|mjs|cjs|ts|py)$/i.test(file)) hasNetworkImpl = true;
+    }
+    if (/\b(window|document|navigator|EventTarget|Storage|Performance|Element|Node)\b/.test(text)
+      || /(?:browser|node)-env-detection-(?:baseline|audit)\.json$/i.test(relative)) {
+      webapiEvidence = true;
+      recordHit('webapi', file);
+      if (inResult && /\.(?:js|mjs|cjs|ts|py)$/i.test(file)) hasBrowserEnv = true;
+    }
+    if (/iframe|contentWindow|contentDocument|defaultView|\bWorker\b|WorkerGlobalScope|MessageChannel|MessagePort|postMessage|terminate/i.test(text)) {
+      realmLifecycleEvidence = true;
+      webapiEvidence = true;
+      recordHit('realmLifecycle', file);
+      recordHit('webapi', file);
+    }
+    if (/appendChild|removeChild|insertBefore|replaceChild|replaceChildren|cloneNode|importNode|adoptNode|innerHTML|DOMParser|querySelector|MutationObserver|childNodes|getElementsBy/i.test(text)) {
+      domCrudEvidence = true;
+      webapiEvidence = true;
+      recordHit('domCrud', file);
+      recordHit('webapi', file);
+    }
+    if (/Object\.keys|Object\.getOwnPropertyNames|Object\.getOwnPropertyDescriptor|Reflect\.ownKeys|prototypeChain|ownKeys|private-state-leakage/i.test(text)) {
+      objectShapeEvidence = true;
+      recordHit('objectShape', file);
+    }
+  }
   for (const file of walk(resultDir)) {
     if (!/\.(js|mjs|cjs|ts|py)$/i.test(file)) continue;
     const relative = (path.relative(resultDir, file) || '.').replace(/\\/g, '/');
@@ -87,7 +158,61 @@ function scanResult(caseDir) {
     }
     if (/\b(XMLHttpRequest|fetch|sendBeacon|Request|Response|Headers)\b/.test(text)) hasNetworkImpl = true;
   }
-  return { resultDir, hasBrowserEnv, hasNetworkImpl };
+  return {
+    resultDir,
+    hasBrowserEnv,
+    hasNetworkImpl,
+    networkEvidence,
+    webapiEvidence,
+    realmLifecycleEvidence,
+    domCrudEvidence,
+    objectShapeEvidence,
+    hits,
+  };
+}
+
+function collectMetrics(value, out = {}, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 6) return out;
+  const keys = new Set([
+    'baselineId',
+    'traceSourceHash',
+    'contractHash',
+    'runtimeSourceHash',
+    'blockingMismatches',
+    'mismatched',
+    'networkMismatches',
+    'extraNodeRequests',
+    'extraNodeEvents',
+    'networkAttempts',
+    'sameSessionVerified',
+    'roundTripCount',
+  ]);
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 50)) collectMetrics(item, out, depth + 1);
+    return out;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    if (keys.has(key) && item !== '' && item !== null && typeof item !== 'undefined') {
+      if (!out[key]) out[key] = [];
+      const encoded = typeof item === 'object' ? JSON.stringify(item) : String(item);
+      if (!out[key].includes(encoded) && out[key].length < 10) out[key].push(encoded);
+    }
+    if (item && typeof item === 'object') collectMetrics(item, out, depth + 1);
+  }
+  return out;
+}
+
+function summarizeComponentData(data) {
+  if (!data || typeof data !== 'object') return data;
+  return {
+    schemaVersion: data.schemaVersion || '',
+    clean: data.clean,
+    passed: data.passed,
+    metrics: collectMetrics(data),
+    summary: data.summary && typeof data.summary === 'object' ? data.summary : undefined,
+    problems: Array.isArray(data.problems) ? data.problems.slice(0, 20) : [],
+    warnings: Array.isArray(data.warnings) ? data.warnings.slice(0, 10) : [],
+  };
 }
 
 function runJson(scriptDir, script, args) {
@@ -97,23 +222,22 @@ function runJson(scriptDir, script, args) {
     windowsHide: true,
     timeout: 180000,
   });
-  let data = null;
-  try { data = JSON.parse(String(ret.stdout || '').trim()); } catch {}
+  let rawData = null;
+  try { rawData = JSON.parse(String(ret.stdout || '').trim()); } catch {}
   return {
     script,
-    command: [process.execPath, ...command],
     exitCode: ret.status,
-    clean: ret.status === 0 && data && data.clean !== false && data.passed !== false,
-    data,
+    clean: ret.status === 0 && rawData && rawData.clean !== false && rawData.passed !== false,
+    data: summarizeComponentData(rawData),
     stderr: String(ret.stderr || '').trim().slice(0, 2000),
-    stdoutPreview: data ? '' : String(ret.stdout || '').trim().slice(0, 2000),
+    stdoutPreview: rawData ? '' : String(ret.stdout || '').trim().slice(0, 2000),
   };
 }
 
 function check(args) {
   const caseDir = path.resolve(args.caseDir || '.');
   const scriptDir = __dirname;
-  const signals = scanResult(caseDir);
+  const signals = scanCaseEvidence(caseDir);
   const trace = hasTraceEvidence(caseDir);
   const components = [];
 
@@ -122,11 +246,21 @@ function check(args) {
     if (args.beforeRealRequest) traceArgs.push('--require-stage-audit');
     components.push(runJson(scriptDir, 'check_trace_api_coverage.js', traceArgs));
   }
-  if (signals.hasBrowserEnv || args.beforeRealRequest) {
+  if (signals.hasBrowserEnv
+    || signals.webapiEvidence
+    || signals.objectShapeEvidence
+    || trace
+    || args.beforeRealRequest) {
     components.push(runJson(scriptDir, 'check_object_shape_audit.js', ['--case-dir', caseDir, '--require']));
     components.push(runJson(scriptDir, 'check_webapi_env_detection_matrix.js', ['--case-dir', caseDir, '--require']));
   }
-  if (signals.hasNetworkImpl || args.requireLive) {
+  if (signals.hasBrowserEnv || signals.hasNetworkImpl || signals.webapiEvidence || args.beforeRealRequest) {
+    components.push(runJson(scriptDir, 'check_code_quality.js', ['--case-dir', caseDir]));
+  }
+  if (signals.hasBrowserEnv || signals.hasNetworkImpl || signals.webapiEvidence) {
+    components.push(runJson(scriptDir, 'check_webapi_addon_coverage.js', ['--case-dir', caseDir, '--warnings-as-errors']));
+  }
+  if (signals.hasNetworkImpl || signals.networkEvidence || args.requireLive) {
     const semanticsArgs = ['--case-dir', caseDir, '--require', '--require-no-send', '--out', path.join(caseDir, 'tmp', 'xhr-fetch-semantics-audit.json')];
     components.push(runJson(scriptDir, 'check_xhr_fetch_semantics.js', semanticsArgs));
     const bridgeArgs = ['--case-dir', caseDir];
@@ -146,7 +280,7 @@ function check(args) {
   }
   if (args.beforeRealRequest && !components.length) problems.push('真实请求前没有触发任何环境闭环组件，说明 case 结构或检测信号缺失');
   return {
-    schemaVersion: 'environment-closure/v2',
+    schemaVersion: 'environment-closure/v3',
     generatedBy: 'check_environment_closure.js',
     caseDir,
     clean: problems.length === 0,
@@ -157,6 +291,12 @@ function check(args) {
       trace,
       browserEnv: signals.hasBrowserEnv,
       networkImpl: signals.hasNetworkImpl,
+      networkEvidence: signals.networkEvidence,
+      webapiEvidence: signals.webapiEvidence,
+      realmLifecycleEvidence: signals.realmLifecycleEvidence,
+      domCrudEvidence: signals.domCrudEvidence,
+      objectShapeEvidence: signals.objectShapeEvidence,
+      evidenceFiles: signals.hits,
     },
     components,
     problems,
@@ -177,12 +317,20 @@ function renderMarkdown(result) {
     `- Trace：${result.signals.trace ? '是' : '否'}`,
     `- 浏览器环境实现：${result.signals.browserEnv ? '是' : '否'}`,
     `- XHR/fetch 实现：${result.signals.networkImpl ? '是' : '否'}`,
+    `- 网络证据：${result.signals.networkEvidence ? '是' : '否'}`,
+    `- Realm / 消息生命周期证据：${result.signals.realmLifecycleEvidence ? '是' : '否'}`,
+    `- DOM CRUD 证据：${result.signals.domCrudEvidence ? '是' : '否'}`,
     '',
     '## 组件',
   ];
   if (!result.components.length) lines.push('- 无');
   for (const component of result.components) {
     lines.push(`- ${component.script}：${component.clean ? '通过' : '失败'}，exit=${component.exitCode}`);
+    const metrics = component.data && component.data.metrics ? component.data.metrics : {};
+    const metricText = Object.entries(metrics)
+      .map(([key, values]) => `${key}=${values.join('|')}`)
+      .join('；');
+    if (metricText) lines.push(`  ${metricText}`);
   }
   if (result.problems.length) {
     lines.push('', '## 阻断问题');

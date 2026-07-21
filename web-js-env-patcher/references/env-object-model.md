@@ -88,6 +88,37 @@ globalThis.parent = globalThis;
 
 探测模式可以最小化；交付模式不得把普通对象当作最终 `window` 真实性方案。
 
+## iframe / Worker Realm 隔离
+
+iframe 与 Worker 不是“换一个全局对象引用”的浅拷贝。只要目标路径创建 iframe、DedicatedWorker 或 SharedWorker，就必须为每个 Realm 建立独立全局、构造器图、对象实例和生命周期状态。
+
+iframe 最低关系：
+
+```text
+iframe.contentWindow !== mainWindow
+iframe.contentWindow.self === iframe.contentWindow
+iframe.contentWindow.window === iframe.contentWindow
+iframe.contentWindow.globalThis === iframe.contentWindow
+iframe.contentWindow.parent === mainWindow
+iframe.contentWindow.top === mainWindow.top
+iframe.contentWindow.frames === iframe.contentWindow
+iframe.contentDocument.defaultView === iframe.contentWindow
+iframe.contentWindow.document === iframe.contentDocument
+iframe.frameElement === iframe
+```
+
+主 Window 与同源 iframe 可以共享同源 Cookie、Storage 后端和网络 Session，但公开 wrapper、构造器与实例不能共享 identity。共享底层 origin state 不等于复用 `navigator`、`performance`、`crypto`、`location`、`document`、Storage wrapper、timer、EventTarget、XHR/fetch 或 URL 构造器。
+
+必须验证：
+
+- `frame.Object !== window.Object`、`frame.Function !== window.Function`、`frame.Array !== window.Array`、`frame.Promise !== window.Promise`。
+- `frame.Event !== window.Event`、`frame.EventTarget !== window.EventTarget`、`frame.URL !== window.URL`、`frame.Blob !== window.Blob`、`frame.XMLHttpRequest !== window.XMLHttpRequest`。
+- frame 创建的对象满足 frame-local `instanceof`，且通常不满足主 Realm 对应构造器的 `instanceof`。
+- `srcdoc`、`document.open/write/close`、navigation/reload 后会创建或更新正确 Document/Realm；旧 Realm 的 timer、XHR、MessagePort task 与 observer callback 不得继续写入新文档。
+- Worker Realm 不得暴露 Window-only API，Worker 的 `self/globalThis`、navigator、performance、timer、消息队列和构造器必须独立。
+
+发现 `ctx.X = mainWindow.X`、`frame.URL.prototype = URL.prototype`、Worker 直接透传宿主或主 Realm `Event/XHR/Request/Response` 时，默认按 P0/P1 Realm 隔离缺陷处理，不能标为 `accepted-diff`。
+
 ## 属性定义工具与模板模块
 
 本 Skill 随包提供可复制模板：

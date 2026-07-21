@@ -1,23 +1,35 @@
 #!/usr/bin/env node
 'use strict';
 
+const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
-const REQUEST_FIELDS = [
-  'actor',
-  'realmId',
-  'navigationEpoch',
-  'method',
-  'url',
-  'credentials',
-  'referrer',
-  'contentType',
+const AUDIT_SCHEMA = 'xhr-fetch-semantics-audit/v3';
+const TRANSCRIPT_SCHEMA = 'network-transcript/v3';
+const SHA256_RE = /^[a-f0-9]{64}$/i;
+
+const COMMON_FIELDS = ['actor', 'realmId', 'navigationEpoch', 'sessionId'];
+const REQUEST_FIELDS = ['method', 'url', 'credentials', 'referrer'];
+const RESPONSE_FIELDS = [
+  'status',
+  'statusText',
+  'responseURL',
+  'responseType',
   'bodyLength',
   'bodySha256',
 ];
-
-const RESPONSE_FIELDS = ['status', 'statusText', 'responseURL', 'responseType', 'bodyLength', 'bodySha256'];
+const OPTIONAL_REQUEST_FIELDS = [
+  'taskId',
+  'origin',
+  'cookiePolicy',
+  'bodyType',
+  'redirect',
+  'cache',
+  'timeout',
+  'withCredentials',
+  'async',
+];
 
 function parseArgs(argv) {
   const args = {
@@ -53,11 +65,22 @@ function usage() {
   node scripts/check_xhr_fetch_semantics.js --case-dir case --require --require-no-send --markdown
   node scripts/check_xhr_fetch_semantics.js --browser case/fixtures/browser-network-transcript.ndjson --node case/tmp/node-network-transcript.ndjson --out case/tmp/xhr-fetch-semantics-audit.json --json
 
-说明：逐条比较浏览器与 Node 的 XHR/fetch/navigation transcript，包括请求来源、URL、Header 顺序、body 字节摘要、status=0、responseURL、事件顺序和 reload realm 生命周期。`;
+说明：先验证 browser/Node transcript 是否包含完整的真实观测字段，再逐事件比较 XHR/fetch/navigation 的请求、响应、Header 顺序、body 摘要、Session 与生命周期。缺失字段不会被默认值掩盖。`;
 }
 
 function exists(file) {
   try { return fs.existsSync(file); } catch { return false; }
+}
+
+function hasOwn(value, key) {
+  return Boolean(value && Object.prototype.hasOwnProperty.call(value, key));
+}
+
+function firstOwn(value, keys) {
+  for (const key of keys) {
+    if (hasOwn(value, key)) return { present: true, key, value: value[key] };
+  }
+  return { present: false, key: '', value: undefined };
 }
 
 function parseTranscript(file) {
@@ -65,8 +88,10 @@ function parseTranscript(file) {
   if (/\.json$/i.test(file)) {
     const raw = JSON.parse(text);
     return {
-      meta: raw.meta || raw.metadata || raw,
-      events: Array.isArray(raw.events) ? raw.events : (Array.isArray(raw.items) ? raw.items : (Array.isArray(raw) ? raw : [])),
+      meta: raw.meta || raw.metadata || (Array.isArray(raw) ? {} : raw),
+      events: Array.isArray(raw.events)
+        ? raw.events
+        : (Array.isArray(raw.items) ? raw.items : (Array.isArray(raw) ? raw : [])),
     };
   }
   const events = [];
@@ -80,94 +105,352 @@ function parseTranscript(file) {
   return { meta, events };
 }
 
-function normalizeHeaders(value) {
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    return value.map(item => {
-      if (Array.isArray(item)) return [String(item[0] || '').toLowerCase(), String(item[1] || '')];
-      return [String(item.name || item.key || '').toLowerCase(), String(item.value || '')];
-    });
-  }
-  return Object.entries(value).map(([name, headerValue]) => [String(name).toLowerCase(), String(headerValue)]);
+function sha256Text(value) {
+  return crypto.createHash('sha256').update(value, 'utf8').digest('hex');
 }
 
-function normalizeEvent(event, index) {
-  const body = event.body && typeof event.body === 'object' ? event.body : {};
+function normalizeHeaderValue(value) {
+  if (typeof value === 'string') {
+    return {
+      sha256: sha256Text(value),
+      length: Buffer.byteLength(value, 'utf8'),
+      redacted: false,
+    };
+  }
+  if (value && typeof value === 'object') {
+    return {
+      sha256: String(value.sha256 || '').toLowerCase(),
+      length: Number(value.length),
+      redacted: value.redacted === true,
+    };
+  }
   return {
-    id: String(event.id || event.requestId || event.correlationId || index),
-    pairKey: String(event.pairKey || event.requestKey || event.logicalId || event.id || event.requestId || index),
-    kind: String(event.kind || event.event || event.type || '').toLowerCase(),
-    actor: String(event.actor || event.initiator || event.api || '').toLowerCase(),
-    realmId: String(event.realmId || event.realm || 'main'),
-    navigationEpoch: Number(event.navigationEpoch || event.epoch || 0),
+    sha256: '',
+    length: Number.NaN,
+    redacted: false,
+  };
+}
+
+function headerEntryParts(item) {
+  if (Array.isArray(item)) return { name: item[0], value: item[1] };
+  if (item && typeof item === 'object') {
+    return {
+      name: hasOwn(item, 'name') ? item.name : item.key,
+      value: item.value,
+    };
+  }
+  return { name: undefined, value: undefined };
+}
+
+function validateAndNormalizeHeaders(value, label, problems, options = {}) {
+  if (!Array.isArray(value)) {
+    problems.push(`${label} 必须是保留顺序与重复字段的 Header 数组`);
+    return [];
+  }
+  if (options.requireNonEmpty && value.length === 0) {
+    problems.push(`${label} 不能为空；完整 network transcript 必须记录实际发送的 Header`);
+  }
+  const normalized = [];
+  for (const [index, item] of value.entries()) {
+    const parts = headerEntryParts(item);
+    const name = typeof parts.name === 'string' ? parts.name.trim().toLowerCase() : '';
+    if (!name) problems.push(`${label}[${index}] 缺少 Header 名称`);
+    const headerValue = normalizeHeaderValue(parts.value);
+    if (typeof parts.value === 'string') {
+      if (parts.value.length === 0) {
+        problems.push(`${label}[${index}] ${name || '<unknown>'} 的值为空；应记录真实值或脱敏摘要`);
+      }
+    } else if (parts.value && typeof parts.value === 'object') {
+      if (parts.value.redacted !== true
+        || !SHA256_RE.test(String(parts.value.sha256 || ''))
+        || !Number.isInteger(Number(parts.value.length))
+        || Number(parts.value.length) < 0) {
+        problems.push(`${label}[${index}] ${name || '<unknown>'} 的脱敏值必须包含 redacted=true、length 和 SHA-256`);
+      }
+    } else {
+      problems.push(`${label}[${index}] ${name || '<unknown>'} 缺少 Header 值`);
+    }
+    normalized.push([name, headerValue]);
+  }
+  return normalized;
+}
+
+function kindValue(event) {
+  return String(firstOwn(event, ['kind', 'event', 'type']).value || '').toLowerCase();
+}
+
+function eventClass(kind) {
+  if (/^(request|send|network-request)$/.test(kind) || /-request$/.test(kind)) return 'request';
+  if (/^(response|complete|loadend|network-response)$/.test(kind) || /-response$/.test(kind)) return 'response';
+  if (/realm-destroyed|navigation|reload|pagehide|unload|lifecycle/.test(kind)) return 'lifecycle';
+  return 'unknown';
+}
+
+function normalizeActor(actor) {
+  const value = String(actor || '').toLowerCase();
+  return value === 'xmlhttprequest' ? 'xhr' : value;
+}
+
+function normalizeEvent(event, index, normalizedHeaders = {}) {
+  const body = event.body && typeof event.body === 'object' ? event.body : {};
+  const navigationEpoch = firstOwn(event, ['navigationEpoch', 'epoch']);
+  const sequence = firstOwn(event, ['sequence', 'seq']);
+  return {
+    index,
+    pairKey: String(firstOwn(event, ['pairKey', 'requestKey', 'logicalId']).value || ''),
+    kind: kindValue(event),
+    actor: normalizeActor(firstOwn(event, ['actor', 'initiator', 'api']).value),
+    realmId: String(firstOwn(event, ['realmId', 'realm']).value || ''),
+    navigationEpoch: Number(navigationEpoch.value),
     taskId: String(event.taskId || ''),
     method: String(event.method || '').toUpperCase(),
-    url: String(event.url || event.requestURL || ''),
+    url: String(firstOwn(event, ['url', 'requestURL']).value || ''),
     credentials: String(event.credentials || ''),
     referrer: String(event.referrer || ''),
+    origin: String(event.origin || ''),
+    cookiePolicy: String(event.cookiePolicy || ''),
+    bodyType: String(event.bodyType || body.type || ''),
     contentType: String(event.contentType || body.contentType || ''),
-    bodyLength: Number(event.bodyLength ?? body.length ?? body.byteLength ?? 0),
-    bodySha256: String(event.bodySha256 || body.sha256 || ''),
-    headers: normalizeHeaders(event.headers || event.requestHeaders),
-    responseHeaders: normalizeHeaders(event.responseHeaders),
-    status: Number(event.status ?? 0),
-    statusText: String(event.statusText || ''),
-    responseURL: String(event.responseURL || ''),
-    responseType: String(event.responseType || ''),
+    bodyLength: Number(firstOwn(event, ['bodyLength']).present ? event.bodyLength : (body.length ?? body.byteLength)),
+    bodySha256: String(event.bodySha256 || body.sha256 || '').toLowerCase(),
+    headers: normalizedHeaders.headers || [],
+    responseHeaders: normalizedHeaders.responseHeaders || [],
+    status: Number(event.status),
+    statusText: String(hasOwn(event, 'statusText') ? event.statusText : ''),
+    responseURL: String(hasOwn(event, 'responseURL') ? event.responseURL : ''),
+    responseType: String(hasOwn(event, 'responseType') ? event.responseType : ''),
     lifecycle: Array.isArray(event.lifecycle) ? event.lifecycle.map(String) : [],
     validRealm: event.validRealm !== false,
     cancelledReason: String(event.cancelledReason || event.cancelReason || ''),
     sessionId: String(event.sessionId || ''),
-    sequence: Number(event.sequence || event.seq || index),
+    sequence: Number(sequence.value),
+    redirect: event.redirect,
+    cache: event.cache,
+    timeout: event.timeout,
+    withCredentials: event.withCredentials,
+    async: event.async,
   };
 }
 
-function eventClass(kind) {
-  if (/request|send|open/.test(kind)) return 'request';
-  if (/response|complete|loadend/.test(kind)) return 'response';
-  if (/realm-destroyed|navigation-commit|reload/.test(kind)) return 'lifecycle';
-  return kind || 'unknown';
+function requireField(event, aliases, label, problems, options = {}) {
+  const found = firstOwn(event, aliases);
+  if (!found.present) {
+    problems.push(`${label} 缺少 ${aliases[0]}`);
+    return undefined;
+  }
+  if (options.nonEmpty && String(found.value || '') === '') {
+    problems.push(`${label} 的 ${aliases[0]} 不能为空`);
+  }
+  return found.value;
+}
+
+function validateSha256(value, label, problems) {
+  if (!SHA256_RE.test(String(value || ''))) problems.push(`${label} 必须是完整 SHA-256`);
+}
+
+function validateLength(value, label, problems) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0) problems.push(`${label} 必须是非负整数`);
+}
+
+function requestHasBody(event) {
+  const method = String(event.method || '').toUpperCase();
+  const body = event.body && typeof event.body === 'object' ? event.body : {};
+  return /^(POST|PUT|PATCH)$/.test(method)
+    || hasOwn(event, 'bodyLength')
+    || hasOwn(event, 'bodySha256')
+    || hasOwn(event, 'contentType')
+    || Object.keys(body).length > 0;
+}
+
+function validateEvent(event, index, sourceLabel, problems) {
+  const label = `${sourceLabel} event[${index}]`;
+  const problemStart = problems.length;
+  if (!event || typeof event !== 'object' || Array.isArray(event)) {
+    problems.push(`${label} 必须是对象`);
+    const normalized = normalizeEvent({}, index);
+    normalized.validationProblems = problems.slice(problemStart);
+    return normalized;
+  }
+  const kind = requireField(event, ['kind', 'event'], label, problems, { nonEmpty: true });
+  const cls = eventClass(String(kind || '').toLowerCase());
+  if (cls === 'unknown') problems.push(`${label} 的 kind 无法归类为 request/response/lifecycle`);
+  requireField(event, ['pairKey', 'requestKey', 'logicalId'], label, problems, { nonEmpty: true });
+  requireField(event, ['actor', 'initiator', 'api'], label, problems, { nonEmpty: true });
+  requireField(event, ['realmId', 'realm'], label, problems, { nonEmpty: true });
+  const epoch = requireField(event, ['navigationEpoch', 'epoch'], label, problems);
+  if (!Number.isInteger(Number(epoch)) || Number(epoch) < 0) problems.push(`${label} 的 navigationEpoch 必须是非负整数`);
+  const sequence = requireField(event, ['sequence', 'seq'], label, problems);
+  if (!Number.isFinite(Number(sequence))) problems.push(`${label} 的 sequence 必须是数字`);
+  requireField(event, ['sessionId'], label, problems, { nonEmpty: true });
+
+  const normalizedHeaders = {};
+  if (cls === 'request') {
+    requireField(event, ['method'], label, problems, { nonEmpty: true });
+    requireField(event, ['url', 'requestURL'], label, problems, { nonEmpty: true });
+    requireField(event, ['credentials'], label, problems, { nonEmpty: true });
+    requireField(event, ['referrer'], label, problems);
+    const headers = requireField(event, ['headers', 'requestHeaders'], label, problems);
+    normalizedHeaders.headers = validateAndNormalizeHeaders(
+      headers,
+      `${label}.headers`,
+      problems,
+      { requireNonEmpty: true },
+    );
+    if (requestHasBody(event)) {
+      const bodyLength = requireField(event, ['bodyLength'], label, problems);
+      const bodySha256 = requireField(event, ['bodySha256'], label, problems);
+      const contentType = requireField(event, ['contentType'], label, problems);
+      validateLength(bodyLength, `${label}.bodyLength`, problems);
+      validateSha256(bodySha256, `${label}.bodySha256`, problems);
+      if (Number(bodyLength) > 0 && String(contentType || '') === '') {
+        problems.push(`${label} 有请求体但 contentType 为空`);
+      }
+    }
+  } else if (cls === 'response') {
+    const status = requireField(event, ['status'], label, problems);
+    requireField(event, ['statusText'], label, problems);
+    const responseURL = requireField(event, ['responseURL'], label, problems);
+    requireField(event, ['responseType'], label, problems);
+    const bodyLength = requireField(event, ['bodyLength'], label, problems);
+    const bodySha256 = requireField(event, ['bodySha256'], label, problems);
+    const responseHeaders = requireField(event, ['responseHeaders'], label, problems);
+    const lifecycle = requireField(event, ['lifecycle'], label, problems);
+    if (!Number.isInteger(Number(status)) || Number(status) < 0 || Number(status) > 599) {
+      problems.push(`${label}.status 必须是 0 到 599 的整数`);
+    }
+    if (Number(status) > 0 && String(responseURL || '') === '') {
+      problems.push(`${label} status>0 时必须记录最终 responseURL`);
+    }
+    validateLength(bodyLength, `${label}.bodyLength`, problems);
+    validateSha256(bodySha256, `${label}.bodySha256`, problems);
+    normalizedHeaders.responseHeaders = validateAndNormalizeHeaders(
+      responseHeaders,
+      `${label}.responseHeaders`,
+      problems,
+    );
+    if (!Array.isArray(lifecycle) || lifecycle.length === 0) {
+      problems.push(`${label}.lifecycle 必须记录 readyState/event/Promise 顺序`);
+    }
+  } else if (cls === 'lifecycle') {
+    const lifecycle = requireField(event, ['lifecycle'], label, problems);
+    if (!Array.isArray(lifecycle) || lifecycle.length === 0) {
+      problems.push(`${label}.lifecycle 必须是非空数组`);
+    }
+  }
+  const normalized = normalizeEvent(event, index, normalizedHeaders);
+  normalized.validationProblems = problems.slice(problemStart);
+  return normalized;
+}
+
+function validateMeta(meta, sourceLabel, options, problems) {
+  if (!meta || typeof meta !== 'object' || Array.isArray(meta)) {
+    problems.push(`${sourceLabel} transcript 缺少 meta 对象`);
+    return;
+  }
+  if (meta.schemaVersion !== TRANSCRIPT_SCHEMA) {
+    problems.push(`${sourceLabel} transcript schemaVersion 必须是 ${TRANSCRIPT_SCHEMA}`);
+  }
+  if (!String(meta.baselineId || '')) problems.push(`${sourceLabel} transcript 缺少 baselineId`);
+  const producer = String(meta.generatedBy || meta.capturedBy || '');
+  if (!producer) {
+    problems.push(`${sourceLabel} transcript 缺少 generatedBy/capturedBy`);
+  } else if (options.browser && !/browser|ruyi|camoufox|cloak|firefox|chrome|chromium|webkit|manual/i.test(producer)) {
+    problems.push(`${sourceLabel} transcript 生成来源不可识别：${producer}`);
+  } else if (!options.browser && !/node|runtime|audit|probe|recorder/i.test(producer)) {
+    problems.push(`${sourceLabel} transcript generatedBy 不可信：${producer}`);
+  }
+  if (options.browser) {
+    if (meta.mode !== 'browser-baseline') {
+      problems.push(`${sourceLabel} transcript mode 必须是 browser-baseline`);
+    }
+  } else {
+    if (!SHA256_RE.test(String(meta.runtimeSourceHash || ''))) {
+      problems.push(`${sourceLabel} transcript 缺少有效 runtimeSourceHash`);
+    }
+    if (options.requireNoSend) {
+      if (meta.mode !== 'no-send' && meta.networkMode !== 'no-send') {
+        problems.push(`${sourceLabel} transcript 必须来自 no-send 模式`);
+      }
+      if (!hasOwn(meta, 'networkAttempts') || Number(meta.networkAttempts) !== 0) {
+        problems.push(`${sourceLabel} transcript 必须明确记录 networkAttempts=0`);
+      }
+    }
+  }
+}
+
+function validateTranscript(raw, sourceLabel, options, problems) {
+  validateMeta(raw.meta, sourceLabel, options, problems);
+  if (!Array.isArray(raw.events) || raw.events.length === 0) {
+    problems.push(`${sourceLabel} transcript 没有事件`);
+    return [];
+  }
+  const events = raw.events.map((event, index) => validateEvent(event, index, sourceLabel, problems));
+  let previous = Number.NEGATIVE_INFINITY;
+  const seen = new Set();
+  for (const event of events) {
+    if (seen.has(event.sequence)) problems.push(`${sourceLabel} transcript sequence 重复：${event.sequence}`);
+    seen.add(event.sequence);
+    if (!(event.sequence > previous)) {
+      problems.push(`${sourceLabel} transcript 事件必须按严格递增 sequence 写入`);
+    }
+    previous = event.sequence;
+  }
+  return events;
 }
 
 function compareField(expected, observed, field, diffs) {
-  if (typeof expected[field] === 'undefined' || expected[field] === '') return;
-  if (expected[field] !== observed[field]) diffs.push({ field, expected: expected[field], observed: observed[field] });
+  if (!Object.is(expected[field], observed[field])) {
+    diffs.push({ field, expected: expected[field], observed: observed[field] });
+  }
 }
 
-function compareHeaders(expected, observed, diffs) {
-  if (!expected.headers.length) return;
-  const left = JSON.stringify(expected.headers);
-  const right = JSON.stringify(observed.headers);
-  if (left !== right) diffs.push({ field: 'headers', expected: expected.headers, observed: observed.headers });
+function compareOptionalField(expectedRaw, observedRaw, expected, observed, field, diffs) {
+  const expectedPresent = hasOwn(expectedRaw, field);
+  const observedPresent = hasOwn(observedRaw, field);
+  if (!expectedPresent && !observedPresent) return;
+  if (expectedPresent !== observedPresent || expected[field] !== observed[field]) {
+    diffs.push({
+      field,
+      expected: expectedPresent ? expected[field] : '<missing>',
+      observed: observedPresent ? observed[field] : '<missing>',
+    });
+  }
+}
+
+function compareHeaders(expected, observed, field, diffs) {
+  if (JSON.stringify(expected[field]) !== JSON.stringify(observed[field])) {
+    diffs.push({ field, expected: expected[field], observed: observed[field] });
+  }
 }
 
 function compareLifecycle(expected, observed, diffs) {
-  if (!expected.lifecycle.length) return;
   if (JSON.stringify(expected.lifecycle) !== JSON.stringify(observed.lifecycle)) {
     diffs.push({ field: 'lifecycle', expected: expected.lifecycle, observed: observed.lifecycle });
   }
 }
 
 function eventKey(event) {
-  return [eventClass(event.kind), event.pairKey].join(':');
+  return `${eventClass(event.kind)}:${event.pairKey}`;
 }
 
 function hardInvariants(events) {
   const problems = [];
   const destroyedRealms = new Map();
-  for (const event of [...events].sort((a, b) => a.sequence - b.sequence)) {
+  for (const event of events) {
+    const cls = eventClass(event.kind);
     if (/realm-destroyed|navigation-commit|reload-commit/.test(event.kind)) {
       destroyedRealms.set(`${event.realmId}:${event.navigationEpoch}`, event.sequence);
+      if (event.actor === 'xhr') {
+        problems.push(`${event.pairKey}：document navigation/reload 被错误归类为 XHR`);
+      }
       continue;
     }
-    if (event.status === 0 && event.responseURL !== '') {
+    if (cls === 'response' && event.status === 0 && event.responseURL !== '') {
       problems.push(`${event.pairKey}：status=0 时 responseURL 必须为空，当前为 ${event.responseURL}`);
     }
-    if ((event.actor === 'xhr' || event.actor === 'xmlhttprequest') && /navigation|reload/.test(event.kind)) {
-      problems.push(`${event.pairKey}：document navigation/reload 被错误归类为 XHR`);
-    }
     const destroyedAt = destroyedRealms.get(`${event.realmId}:${event.navigationEpoch}`);
-    if (destroyedAt && event.sequence > destroyedAt && !event.cancelledReason) {
+    if (typeof destroyedAt !== 'undefined' && event.sequence > destroyedAt && !event.cancelledReason) {
       problems.push(`${event.pairKey}：旧 realm ${event.realmId}/${event.navigationEpoch} 销毁后仍产生未取消的 timer/XHR/task`);
     }
     if (event.validRealm === false && !event.cancelledReason) {
@@ -177,85 +460,208 @@ function hardInvariants(events) {
   return problems;
 }
 
+function compareEvent(expectedRaw, observedRaw, expected, observed) {
+  const diffs = [];
+  if (expected.validationProblems.length) {
+    diffs.push({
+      field: 'browserTranscriptCompleteness',
+      expected: 'complete',
+      observed: `${expected.validationProblems.length} problem(s)`,
+    });
+  }
+  if (observed.validationProblems.length) {
+    diffs.push({
+      field: 'nodeTranscriptCompleteness',
+      expected: 'complete',
+      observed: `${observed.validationProblems.length} problem(s)`,
+    });
+  }
+  for (const field of COMMON_FIELDS) compareField(expected, observed, field, diffs);
+  const cls = eventClass(expected.kind);
+  if (cls !== eventClass(observed.kind)) {
+    diffs.push({ field: 'kindClass', expected: cls, observed: eventClass(observed.kind) });
+    return diffs;
+  }
+  if (cls === 'request') {
+    for (const field of REQUEST_FIELDS) compareField(expected, observed, field, diffs);
+    compareHeaders(expected, observed, 'headers', diffs);
+    const expectedBody = requestHasBody(expectedRaw);
+    const observedBody = requestHasBody(observedRaw);
+    if (expectedBody !== observedBody) {
+      diffs.push({ field: 'bodyPresence', expected: expectedBody, observed: observedBody });
+    } else if (expectedBody) {
+      for (const field of ['contentType', 'bodyLength', 'bodySha256']) {
+        compareField(expected, observed, field, diffs);
+      }
+    }
+    for (const field of OPTIONAL_REQUEST_FIELDS) {
+      compareOptionalField(expectedRaw, observedRaw, expected, observed, field, diffs);
+    }
+  } else if (cls === 'response') {
+    for (const field of RESPONSE_FIELDS) compareField(expected, observed, field, diffs);
+    compareHeaders(expected, observed, 'responseHeaders', diffs);
+    compareLifecycle(expected, observed, diffs);
+  } else if (cls === 'lifecycle') {
+    compareLifecycle(expected, observed, diffs);
+    for (const field of ['method', 'url']) {
+      compareOptionalField(expectedRaw, observedRaw, expected, observed, field, diffs);
+    }
+  }
+  return diffs;
+}
+
+function emptyResult(caseDir, browserPath, nodePath, problems, warnings = []) {
+  return {
+    schemaVersion: AUDIT_SCHEMA,
+    generatedBy: 'check_xhr_fetch_semantics.js',
+    clean: false,
+    caseDir,
+    browserPath,
+    nodePath,
+    problems,
+    warnings,
+    results: [],
+    summary: {},
+  };
+}
+
+function extraEventsByKey(expectedEvents, observedEvents) {
+  const remaining = new Map();
+  for (const event of expectedEvents) {
+    const key = eventKey(event);
+    remaining.set(key, (remaining.get(key) || 0) + 1);
+  }
+  const extra = [];
+  for (const event of observedEvents) {
+    const key = eventKey(event);
+    const count = remaining.get(key) || 0;
+    if (count > 0) remaining.set(key, count - 1);
+    else extra.push(event);
+  }
+  return extra;
+}
+
 function check(args) {
   const caseDir = path.resolve(args.caseDir || '.');
   const browserPath = path.resolve(args.browser || path.join(caseDir, 'fixtures', 'browser-network-transcript.ndjson'));
   const nodePath = path.resolve(args.node || path.join(caseDir, 'tmp', 'node-network-transcript.ndjson'));
   const problems = [];
   const warnings = [];
-  if ((args.require || exists(browserPath) || exists(nodePath)) && !exists(browserPath)) problems.push(`缺少浏览器 network transcript：${browserPath}`);
-  if ((args.require || exists(browserPath) || exists(nodePath)) && !exists(nodePath)) problems.push(`缺少 Node network transcript：${nodePath}`);
-  if (problems.length) return { schemaVersion: 'xhr-fetch-semantics-audit/v2', generatedBy: 'check_xhr_fetch_semantics.js', clean: false, caseDir, browserPath, nodePath, problems, warnings, results: [], summary: {} };
+  if ((args.require || exists(browserPath) || exists(nodePath)) && !exists(browserPath)) {
+    problems.push(`缺少浏览器 network transcript：${browserPath}`);
+  }
+  if ((args.require || exists(browserPath) || exists(nodePath)) && !exists(nodePath)) {
+    problems.push(`缺少 Node network transcript：${nodePath}`);
+  }
+  if (problems.length) return emptyResult(caseDir, browserPath, nodePath, problems, warnings);
 
   if (!exists(browserPath) && !exists(nodePath)) {
-    return { schemaVersion: 'xhr-fetch-semantics-audit/v2', generatedBy: 'check_xhr_fetch_semantics.js', clean: true, caseDir, browserPath, nodePath, problems, warnings: ['未触发 network transcript 审计'], results: [], summary: {} };
+    return {
+      ...emptyResult(caseDir, browserPath, nodePath, [], ['未触发 network transcript 审计']),
+      clean: true,
+    };
   }
 
   let browserRaw;
   let nodeRaw;
   try { browserRaw = parseTranscript(browserPath); } catch (err) { problems.push(`浏览器 transcript 无法解析：${err.message}`); }
   try { nodeRaw = parseTranscript(nodePath); } catch (err) { problems.push(`Node transcript 无法解析：${err.message}`); }
-  if (!browserRaw || !nodeRaw) return { schemaVersion: 'xhr-fetch-semantics-audit/v2', generatedBy: 'check_xhr_fetch_semantics.js', clean: false, caseDir, browserPath, nodePath, problems, warnings, results: [], summary: {} };
+  if (!browserRaw || !nodeRaw) return emptyResult(caseDir, browserPath, nodePath, problems, warnings);
 
-  if (browserRaw.meta.baselineId && nodeRaw.meta.baselineId !== browserRaw.meta.baselineId) {
-    problems.push(`network transcript baselineId 不一致：${browserRaw.meta.baselineId} != ${nodeRaw.meta.baselineId || '未记录'}`);
+  const browserEvents = validateTranscript(browserRaw, '浏览器', { browser: true }, problems);
+  const nodeEvents = validateTranscript(
+    nodeRaw,
+    'Node',
+    { browser: false, requireNoSend: args.requireNoSend },
+    problems,
+  );
+  if (browserRaw.meta.baselineId && nodeRaw.meta.baselineId
+    && nodeRaw.meta.baselineId !== browserRaw.meta.baselineId) {
+    problems.push(`network transcript baselineId 不一致：${browserRaw.meta.baselineId} != ${nodeRaw.meta.baselineId}`);
   }
-  if (args.requireNoSend && nodeRaw.meta.mode !== 'no-send' && nodeRaw.meta.networkMode !== 'no-send') {
-    problems.push(`Node network transcript 必须来自 no-send 模式，当前为：${nodeRaw.meta.mode || nodeRaw.meta.networkMode || '未记录'}`);
-  }
-  if (!nodeRaw.meta.runtimeSourceHash) problems.push('Node network transcript 缺少 runtimeSourceHash');
-  if (!nodeRaw.meta.generatedBy) problems.push('Node network transcript 缺少 generatedBy');
+  for (const invariant of hardInvariants(browserEvents)) problems.push(`浏览器 transcript：${invariant}`);
+  for (const invariant of hardInvariants(nodeEvents)) problems.push(`Node transcript：${invariant}`);
 
-  const browserEvents = browserRaw.events.map(normalizeEvent);
-  const nodeEvents = nodeRaw.events.map(normalizeEvent);
-  for (const invariant of hardInvariants(nodeEvents)) problems.push(invariant);
-
-  const nodeByKey = new Map();
-  for (const event of nodeEvents) {
-    const key = eventKey(event);
-    if (!nodeByKey.has(key)) nodeByKey.set(key, []);
-    nodeByKey.get(key).push(event);
+  const browserTimeline = browserEvents.map(eventKey);
+  const nodeTimeline = nodeEvents.map(eventKey);
+  if (JSON.stringify(browserTimeline) !== JSON.stringify(nodeTimeline)) {
+    problems.push('browser/Node network event timeline 不一致；请求、响应或生命周期顺序发生变化');
   }
+
   const results = [];
-  for (const expected of browserEvents) {
-    const key = eventKey(expected);
-    const queue = nodeByKey.get(key) || [];
-    const observed = queue.shift();
-    if (!observed) {
-      results.push({ key, clean: false, diffs: [{ field: '*', expected: 'browser event', observed: 'missing' }] });
-      problems.push(`${key}：Node transcript 缺少对应事件`);
+  const count = Math.max(browserEvents.length, nodeEvents.length);
+  for (let index = 0; index < count; index++) {
+    const expected = browserEvents[index];
+    const observed = nodeEvents[index];
+    if (!expected || !observed) {
+      const key = expected ? eventKey(expected) : eventKey(observed);
+      const diffs = [{
+        field: '*',
+        expected: expected ? 'browser event' : 'missing',
+        observed: observed ? 'node event' : 'missing',
+      }];
+      results.push({ key, index, clean: false, diffs });
       continue;
     }
-    const diffs = [];
-    const fields = eventClass(expected.kind) === 'response' ? RESPONSE_FIELDS : REQUEST_FIELDS;
-    for (const field of fields) compareField(expected, observed, field, diffs);
-    if (eventClass(expected.kind) === 'request') compareHeaders(expected, observed, diffs);
-    compareLifecycle(expected, observed, diffs);
-    if (expected.sessionId && observed.sessionId !== expected.sessionId) {
-      diffs.push({ field: 'sessionId', expected: expected.sessionId, observed: observed.sessionId });
+    const diffs = compareEvent(
+      browserRaw.events[index],
+      nodeRaw.events[index],
+      expected,
+      observed,
+    );
+    if (diffs.length) {
+      problems.push(`${eventKey(expected)}：${diffs.map(diff => diff.field).join('、')} 不一致`);
     }
-    if (diffs.length) problems.push(`${key}：${diffs.map(diff => diff.field).join('、')} 不一致`);
-    results.push({ key, clean: diffs.length === 0, diffs });
+    results.push({ key: eventKey(expected), index, clean: diffs.length === 0, diffs });
   }
-  const extra = [...nodeByKey.values()].flat();
-  if (extra.length) {
-    problems.push(`Node transcript 比浏览器多出 ${extra.length} 个事件，可能存在伪 XHR、错误 reload 或多余资源请求`);
+
+  const extraNode = extraEventsByKey(browserEvents, nodeEvents);
+  const missingNode = extraEventsByKey(nodeEvents, browserEvents);
+  const extraNodeEvents = extraNode.length;
+  const extraNodeRequests = extraNode.filter(event => eventClass(event.kind) === 'request').length;
+  if (extraNodeEvents) {
+    problems.push(`Node transcript 比浏览器多出 ${extraNodeEvents} 个事件，其中 ${extraNodeRequests} 个请求`);
   }
-  const sessionIds = [...new Set(nodeEvents.map(event => event.sessionId).filter(Boolean))];
-  if (sessionIds.length > 1) problems.push(`Node transcript 使用了多个 sessionId：${sessionIds.join('、')}`);
+  if (missingNode.length) {
+    problems.push(`Node transcript 比浏览器少 ${missingNode.length} 个事件`);
+  }
+
+  const browserSessionIds = [...new Set(browserEvents.map(event => event.sessionId).filter(Boolean))];
+  const nodeSessionIds = [...new Set(nodeEvents.map(event => event.sessionId).filter(Boolean))];
+  if (browserSessionIds.length !== 1) {
+    problems.push(`浏览器 transcript 必须使用一个 sessionId，当前为 ${browserSessionIds.join('、') || '未记录'}`);
+  }
+  if (nodeSessionIds.length !== 1) {
+    problems.push(`Node transcript 必须使用一个 sessionId，当前为 ${nodeSessionIds.join('、') || '未记录'}`);
+  }
 
   const summary = {
     browserEvents: browserEvents.length,
     nodeEvents: nodeEvents.length,
     matched: results.filter(item => item.clean).length,
     mismatched: results.filter(item => !item.clean).length,
-    extraNodeEvents: extra.length,
-    sessionIds,
+    networkMismatches: results.filter(item => !item.clean).length,
+    extraNodeEvents,
+    extraNodeRequests,
+    browserSessionIds,
+    nodeSessionIds,
     baselineId: browserRaw.meta.baselineId || nodeRaw.meta.baselineId || '',
     runtimeSourceHash: nodeRaw.meta.runtimeSourceHash || '',
     networkMode: nodeRaw.meta.mode || nodeRaw.meta.networkMode || '',
+    networkAttempts: nodeRaw.meta.networkAttempts,
   };
-  return { schemaVersion: 'xhr-fetch-semantics-audit/v2', generatedBy: 'check_xhr_fetch_semantics.js', clean: problems.length === 0, caseDir, browserPath, nodePath, problems, warnings, results, summary };
+  return {
+    schemaVersion: AUDIT_SCHEMA,
+    generatedBy: 'check_xhr_fetch_semantics.js',
+    clean: problems.length === 0,
+    caseDir,
+    browserPath,
+    nodePath,
+    problems,
+    warnings,
+    results,
+    summary,
+  };
 }
 
 function renderMarkdown(result) {
@@ -272,12 +678,16 @@ function renderMarkdown(result) {
     lines.push(`- matched：${result.summary.matched}`);
     lines.push(`- mismatch：${result.summary.mismatched}`);
     lines.push(`- Node 多余事件：${result.summary.extraNodeEvents}`);
-    lines.push(`- sessionId：${result.summary.sessionIds.join('、') || '未记录'}`);
+    lines.push(`- Node 多余请求：${result.summary.extraNodeRequests}`);
+    lines.push(`- Node sessionId：${result.summary.nodeSessionIds.join('、') || '未记录'}`);
+    lines.push(`- no-send 网络尝试：${String(result.summary.networkAttempts ?? '未记录')}`);
   }
   const bad = result.results.filter(item => !item.clean);
   if (bad.length) {
     lines.push('', '## 逐项差异');
-    for (const item of bad.slice(0, 100)) lines.push(`- ${item.key}：${item.diffs.map(diff => diff.field).join('、')}`);
+    for (const item of bad.slice(0, 100)) {
+      lines.push(`- ${item.index}/${item.key}：${item.diffs.map(diff => diff.field).join('、')}`);
+    }
   }
   if (result.problems.length) {
     lines.push('', '## 阻断问题');
@@ -313,4 +723,11 @@ if (require.main === module) {
   }
 }
 
-module.exports = { check, normalizeEvent, hardInvariants };
+module.exports = {
+  check,
+  eventClass,
+  hardInvariants,
+  normalizeEvent,
+  validateAndNormalizeHeaders,
+  validateTranscript,
+};
